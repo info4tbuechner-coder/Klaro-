@@ -38,15 +38,15 @@ const FloatingActionButtons: React.FC = () => {
 };
 
 const AppContent: React.FC = () => {
-    const { theme } = useAppState();
+    const { theme, debugMode } = useAppState();
+    const dispatch = useAppDispatch();
     const isBlockchainTheme = theme === 'blockchain';
-    const [isDebugPanelVisible, setIsDebugPanelVisible] = useState(false);
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
             if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'D') {
                 event.preventDefault();
-                setIsDebugPanelVisible(prev => !prev);
+                dispatch({ type: 'TOGGLE_DEBUG_MODE' });
             }
         };
 
@@ -55,7 +55,7 @@ const AppContent: React.FC = () => {
         return () => {
             window.removeEventListener('keydown', handleKeyDown);
         };
-    }, []);
+    }, [dispatch]);
 
     return (
         <div className={`theme-${theme} font-sans min-h-screen bg-gradient-to-br from-background-start to-background-end text-foreground transition-colors duration-500 ${isBlockchainTheme ? 'blockchain-bg' : ''}`}>
@@ -73,7 +73,7 @@ const AppContent: React.FC = () => {
             </main>
             <FloatingActionButtons />
             <ModalManager />
-            {isDebugPanelVisible && <DebugPanel onClose={() => setIsDebugPanelVisible(false)} />}
+            {debugMode && <DebugPanel onClose={() => dispatch({ type: 'TOGGLE_DEBUG_MODE' })} />}
         </div>
     );
 };

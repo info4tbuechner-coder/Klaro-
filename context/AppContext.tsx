@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useMemo, useReducer } from 'react';
+import React, { createContext, useContext, useMemo, useReducer, useEffect } from 'react';
 // FIX: Import AppState from types.ts where it's now defined.
 import { Transaction, Category, Goal, Project, RecurringTransaction, Theme, ViewMode, Filters, ModalType, TransactionType, CategoryType, GoalType, Frequency, DateRangePreset, ReportsData, DashboardStats, Liability, LiabilityType, Action, AppState } from '../types';
 import useLocalStorage from '../hooks/useLocalStorage';
@@ -11,10 +11,13 @@ import { endOfYear } from 'date-fns/endOfYear';
 import { subMonths } from 'date-fns/subMonths';
 import { subYears } from 'date-fns/subYears';
 import { sub } from 'date-fns/sub';
+import { add } from 'date-fns/add';
 import { parseISO } from 'date-fns/parseISO';
 import { de } from 'date-fns/locale/de';
 import { differenceInDays } from 'date-fns/differenceInDays';
 import { endOfDay } from 'date-fns/endOfDay';
+import { isAfter } from 'date-fns/isAfter';
+import { isBefore } from 'date-fns/isBefore';
 
 const AppStateContext = createContext<AppState | undefined>(undefined);
 const AppDispatchContext = createContext<React.Dispatch<Action> | undefined>(undefined);
@@ -27,6 +30,7 @@ const initialFilters: Filters = {
     },
     searchTerm: '',
     transactionType: 'all',
+    categoryId: 'all',
     amountRange: {
         min: '',
         max: '',
@@ -38,37 +42,21 @@ const initialFilters: Filters = {
 };
 
 const sampleData = {
-    transactions: [
-        { id: '1', type: TransactionType.INCOME, amount: 3200, description: 'Gehalt', date: format(new Date(), 'yyyy-MM-dd'), categoryId: 'c1' },
-        { id: '2', type: TransactionType.EXPENSE, amount: 850, description: 'Miete', date: format(new Date(), 'yyyy-MM-01'), categoryId: 'c2', tags: ['privat'] },
-        { id: '3', type: TransactionType.EXPENSE, amount: 75.50, description: 'Wocheneinkauf', date: format(subMonths(new Date(), 1), 'yyyy-MM-20'), categoryId: 'c3', tags: ['privat'] },
-        { id: '4', type: TransactionType.SAVING, amount: 200, description: 'ETF Sparplan', date: format(new Date(), 'yyyy-MM-15'), categoryId: 'c4', goalId: 'g1' },
-        { id: '5', type: TransactionType.INCOME, amount: 500, description: 'Freiberufliches Projekt', date: format(new Date(), 'yyyy-MM-10'), categoryId: 'c5', tags: ['business', 'projekt-alpha'] },
-        { id: '6', type: TransactionType.EXPENSE, amount: 49.99, description: 'Software-Abo', date: format(new Date(), 'yyyy-MM-05'), categoryId: 'c6', tags: ['business', 'projekt-alpha'] },
-        { id: '7', type: TransactionType.EXPENSE, amount: 120.00, description: 'Versicherung', date: format(new Date(), 'yyyy-MM-02'), categoryId: 'c2', tags: ['privat'] },
-    ],
+    transactions: [],
     categories: [
         { id: 'c1', name: 'Gehalt', type: CategoryType.INCOME },
-        { id: 'c2', name: 'Wohnen', type: CategoryType.EXPENSE, budget: 1000 },
-        { id: 'c3', name: 'Lebensmittel', type: CategoryType.EXPENSE, budget: 400 },
-        { id: 'c4', name: 'Investments', type: CategoryType.EXPENSE },
-        { id: 'c5', name: 'Freiberuflich', type: CategoryType.INCOME },
-        { id: 'c6', name: 'Software', type: CategoryType.EXPENSE, budget: 100 },
+        { id: 'c2', name: 'Wohnen', type: CategoryType.EXPENSE, budget: 0 },
+        { id: 'c3', name: 'Lebensmittel', type: CategoryType.EXPENSE, budget: 0 },
+        { id: 'c4', name: 'Transport', type: CategoryType.EXPENSE, budget: 0 },
+        { id: 'c5', name: 'Versicherung', type: CategoryType.EXPENSE, budget: 0 },
+        { id: 'c6', name: 'Freizeit', type: CategoryType.EXPENSE, budget: 0 },
+        { id: 'c7', name: 'Sparen & Investments', type: CategoryType.EXPENSE },
+        { id: 'c8', name: 'Sonstiges', type: CategoryType.EXPENSE },
     ],
-    goals: [
-        { id: 'g1', name: 'Neues Auto', targetAmount: 20000, currentAmount: 0, type: GoalType.GOAL },
-        { id: 'g2', name: 'Urlaub', targetAmount: 1500, currentAmount: 0, type: GoalType.SINKING_FUND },
-    ],
-    liabilities: [
-        { id: 'l1', name: 'Studienkredit', type: LiabilityType.DEBT, initialAmount: 15000, paidAmount: 2500, interestRate: 3.5, creditor: 'KfW Bank', startDate: '2022-10-01' },
-        { id: 'l2', name: 'Darlehen an Max', type: LiabilityType.LOAN, initialAmount: 1000, paidAmount: 100, interestRate: 0, debtor: 'Max Mustermann', startDate: '2023-05-15' }
-    ],
-    projects: [
-        { id: 'p1', name: 'Projekt Alpha', tag: 'projekt-alpha' },
-    ],
-    recurringTransactions: [
-        { id: 'r1', description: 'Miete', amount: 850, type: TransactionType.EXPENSE, categoryId: 'c2', frequency: Frequency.MONTHLY, interval: 1, startDate: '2023-01-01', nextDueDate: format(new Date(), 'yyyy-MM-01'), isBill: true },
-    ]
+    goals: [],
+    liabilities: [],
+    projects: [],
+    recurringTransactions: []
 };
 
 const initialState: AppState = {
@@ -90,6 +78,7 @@ const initialState: AppState = {
     isSubscribed: false,
     activeModal: null,
     selectedTransactions: new Set(),
+    debugMode: false,
 };
 
 const recalculateGoalAmounts = (transactions: Transaction[], goals: Goal[]): Goal[] => {
@@ -144,6 +133,8 @@ const appReducer = (state: AppState, action: Action): AppState => {
             return { ...state, activeModal: action.payload };
         case 'CLOSE_MODAL':
             return { ...state, activeModal: null };
+        case 'TOGGLE_DEBUG_MODE':
+            return { ...state, debugMode: !state.debugMode };
         case 'SET_SELECTED_TRANSACTIONS': {
             const newSelected = typeof action.payload === 'function'
                 ? action.payload(state.selectedTransactions)
@@ -254,8 +245,15 @@ const appReducer = (state: AppState, action: Action): AppState => {
         }
         case 'UPDATE_RECURRING': {
             const originalTx = state.recurringTransactions.find(rt => rt.id === action.payload.id);
-            const nextDueDate = originalTx ? originalTx.nextDueDate : action.payload.startDate;
-            return { ...state, recurringTransactions: state.recurringTransactions.map(rt => rt.id === action.payload.id ? {...action.payload, nextDueDate } : rt) };
+            // If nextDueDate is explicitly provided (e.g. from automatic processing), use it. Otherwise keep existing.
+            const nextDueDate = action.payload.nextDueDate || (originalTx ? originalTx.nextDueDate : action.payload.startDate);
+            
+            return { 
+                ...state, 
+                recurringTransactions: state.recurringTransactions.map(rt => 
+                    rt.id === action.payload.id ? { ...action.payload, nextDueDate } : rt
+                ) 
+            };
         }
         case 'DELETE_RECURRING': {
             return { ...state, recurringTransactions: state.recurringTransactions.filter(rt => rt.id !== action.payload) };
@@ -304,6 +302,20 @@ const appReducer = (state: AppState, action: Action): AppState => {
                 theme: state.theme,
             };
         }
+        case 'CLEAR_ALL_DATA': {
+            // Clear all user data but keep settings like theme and user profile.
+            return {
+                ...state,
+                transactions: [],
+                categories: [],
+                goals: [],
+                projects: [],
+                recurringTransactions: [],
+                liabilities: [],
+                selectedTransactions: new Set(),
+                activeModal: null,
+            };
+        }
         default:
             return state;
     }
@@ -320,7 +332,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Fallback for userProfile if loading from older local storage
         const userProfile = storedState.userProfile || initialState.userProfile;
         
-        return { ...storedState, goals, liabilities, userProfile };
+        return { ...storedState, goals, liabilities, userProfile, activeModal: { type: 'MANAGE_CATEGORIES' } as ModalType };
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
 
@@ -328,12 +340,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const newState = appReducer(state, action);
         // Do not persist state for actions that don't change core data
         // to avoid unnecessary writes to localStorage.
-        const nonPersistentActions = new Set(['SET_SELECTED_TRANSACTIONS', 'OPEN_MODAL', 'CLOSE_MODAL', 'UPDATE_FILTERS']);
+        const nonPersistentActions = new Set(['SET_SELECTED_TRANSACTIONS', 'OPEN_MODAL', 'CLOSE_MODAL', 'UPDATE_FILTERS', 'TOGGLE_DEBUG_MODE']);
         if (!nonPersistentActions.has(action.type)) {
             const stateToStore = {
                 ...newState,
                 activeModal: null,
                 selectedTransactions: new Set<string>(),
+                debugMode: false // Always reset debug mode on storage
             };
             setStoredState(stateToStore);
         }
@@ -341,6 +354,70 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     
     const [state, dispatch] = useReducer(reducerWithSideEffects, initialStateWithRecalculations);
+
+    // Automatic processing of recurring transactions
+    useEffect(() => {
+        const processRecurringTransactions = () => {
+            const today = new Date();
+            const todayStr = format(today, 'yyyy-MM-dd');
+            let hasChanges = false;
+
+            state.recurringTransactions.forEach(rt => {
+                // If nextDueDate is today or in the past
+                if (rt.nextDueDate && rt.nextDueDate <= todayStr) {
+                    // Check if there is an end date and if we passed it
+                    if (rt.endDate && rt.nextDueDate > rt.endDate) return;
+
+                    hasChanges = true;
+                    
+                    // 1. Create the transaction
+                    const newTx: Omit<Transaction, 'id'> = {
+                        type: rt.type,
+                        amount: rt.amount,
+                        description: rt.description,
+                        date: rt.nextDueDate,
+                        categoryId: rt.categoryId,
+                        goalId: rt.goalId,
+                        tags: ['dauerauftrag', ...(rt.isBill ? ['rechnung'] : [])]
+                    };
+                    
+                    dispatch({ type: 'ADD_TRANSACTION', payload: newTx });
+
+                    // 2. Calculate next due date
+                    const currentDueDate = parseISO(rt.nextDueDate);
+                    let nextDate = currentDueDate;
+                    
+                    switch (rt.frequency) {
+                        case Frequency.DAILY:
+                            nextDate = add(currentDueDate, { days: rt.interval });
+                            break;
+                        case Frequency.WEEKLY:
+                            nextDate = add(currentDueDate, { weeks: rt.interval });
+                            break;
+                        case Frequency.MONTHLY:
+                            nextDate = add(currentDueDate, { months: rt.interval });
+                            break;
+                        case Frequency.YEARLY:
+                            nextDate = add(currentDueDate, { years: rt.interval });
+                            break;
+                    }
+                    
+                    const nextDueDateStr = format(nextDate, 'yyyy-MM-dd');
+
+                    // 3. Update the recurring transaction
+                    dispatch({ 
+                        type: 'UPDATE_RECURRING', 
+                        payload: { ...rt, nextDueDate: nextDueDateStr } 
+                    });
+                }
+            });
+        };
+
+        // Run strictly once on mount (or when list changes significantly, though we want to avoid infinite loops)
+        // Using a timeout to not block initial render
+        const timer = setTimeout(processRecurringTransactions, 1000);
+        return () => clearTimeout(timer);
+    }, [state.recurringTransactions]); // Dependency changed from .length to array to catch content updates
     
     return (
         <AppStateContext.Provider value={state}>
@@ -350,7 +427,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         </AppStateContext.Provider>
     );
 };
-
+// ... exports ...
 export const useAppState = (): AppState => {
     const context = useContext(AppStateContext);
     if (context === undefined) {
@@ -366,49 +443,53 @@ export const useAppDispatch = (): React.Dispatch<Action> => {
     }
     return context;
 };
-
+// ... rest of hooks ...
 export const useFilteredTransactions = (): Transaction[] => {
     const { transactions, filters, viewMode } = useAppState();
 
-    const getDateRange = (preset: DateRangePreset) => {
+    const getDateRangeStrings = (preset: DateRangePreset): { from: string, to: string } => {
         const now = new Date();
+        const fmt = (d: Date) => format(d, 'yyyy-MM-dd');
+
         switch (preset) {
             case 'this_month':
-                return { from: startOfMonth(now), to: endOfMonth(now) };
+                return { from: fmt(startOfMonth(now)), to: fmt(endOfMonth(now)) };
             case 'last_month':
                 const lastMonth = subMonths(now, 1);
-                return { from: startOfMonth(lastMonth), to: endOfMonth(lastMonth) };
+                return { from: fmt(startOfMonth(lastMonth)), to: fmt(endOfMonth(lastMonth)) };
             case 'this_year':
-                return { from: startOfYear(now), to: endOfYear(now) };
+                return { from: fmt(startOfYear(now)), to: fmt(endOfYear(now)) };
             default:
-                return { from: new Date('1970-01-01'), to: new Date('2999-12-31')};
+                return { from: '1970-01-01', to: '2999-12-31'};
         }
     };
 
     return useMemo(() => {
-        let fromDate: Date, toDate: Date;
-        if (filters.dateRange.preset === 'custom') {
-            fromDate = parseISO(filters.dateRange.from);
-            toDate = endOfDay(parseISO(filters.dateRange.to));
-        } else {
-            const range = getDateRange(filters.dateRange.preset);
-            fromDate = range.from;
-            toDate = range.to;
-        }
+        let fromStr: string, toStr: string;
         
-        const fromTimestamp = fromDate.getTime();
-        const toTimestamp = toDate.getTime();
+        if (filters.dateRange.preset === 'custom') {
+            fromStr = filters.dateRange.from;
+            toStr = filters.dateRange.to;
+        } else {
+            const range = getDateRangeStrings(filters.dateRange.preset);
+            fromStr = range.from;
+            toStr = range.to;
+        }
+
         const searchTerm = filters.searchTerm.toLowerCase();
         
         return transactions.filter(t => {
-            const transactionDate = parseISO(t.date).getTime();
-            if(transactionDate < fromTimestamp || transactionDate > toTimestamp) return false;
+            // Optimization: String comparison for ISO dates (YYYY-MM-DD)
+            // This avoids creating Date objects in the loop.
+            if (t.date < fromStr || t.date > toStr) return false;
 
             if (filters.transactionType !== 'all' && t.type !== filters.transactionType) return false;
 
-            const { min, max } = filters.amountRange;
-            if (min !== '' && t.amount < min) return false;
-            if (max !== '' && t.amount > max) return false;
+            const minVal = filters.amountRange.min === '' ? NaN : parseFloat(filters.amountRange.min);
+            const maxVal = filters.amountRange.max === '' ? NaN : parseFloat(filters.amountRange.max);
+
+            if (!isNaN(minVal) && t.amount < minVal) return false;
+            if (!isNaN(maxVal) && t.amount > maxVal) return false;
 
             if (searchTerm && !t.description.toLowerCase().includes(searchTerm) && !t.tags?.some(tag => tag.toLowerCase().includes(searchTerm))) return false;
 
@@ -424,13 +505,14 @@ export const useFilteredTransactions = (): Transaction[] => {
                 if(filters.categoryStatus === 'uncategorized' && t.categoryId) return false;
             }
 
+            // New filter for categoryId
+            if (filters.categoryId !== 'all' && t.categoryId !== filters.categoryId) return false;
+
             if(filters.goalId !== 'all' && t.goalId !== filters.goalId) return false;
 
             if(filters.liabilityId !== 'all' && t.liabilityId !== filters.liabilityId) return false;
 
             return true;
-        // Optimization: Use string comparison for ISO dates (YYYY-MM-DD) instead of parsing to Date objects.
-        // This is significantly faster for large datasets.
         }).sort((a, b) => b.date.localeCompare(a.date));
     }, [transactions, filters, viewMode]);
 };

@@ -1,11 +1,12 @@
 
 import React, { useState, useCallback, useRef, useEffect, memo, useMemo } from 'react';
-import { useAppState, useAppDispatch, useSankeyData, useProjectReportData } from '../../context/AppContext';
+import { useAppState, useAppDispatch, useSankeyData, useCashflowData, useBudgetOverviewData } from '../../context/AppContext';
 import { Transaction, Category, Goal, Project, RecurringTransaction, TransactionType, CategoryType, GoalType, Frequency, ModalType, LiabilityType, Liability } from '../../types';
 import { GoogleGenAI, Type } from "@google/genai";
-import { X, Camera, Sparkles, Trash2, FileDown, UploadCloud, Edit, FileText, ArrowDownCircle, ArrowUpCircle, Calendar, GripVertical, CalendarCheck, TrendingUp, PiggyBank, BarChart3, Zap, ShieldCheck, AlertTriangle, User, RefreshCw } from 'lucide-react';
+import { X, Camera, Sparkles, Trash2, FileDown, UploadCloud, Edit, ArrowDownCircle, ArrowUpCircle, Calendar, GripVertical, CalendarCheck, TrendingUp, PiggyBank, BarChart3, Zap, ShieldCheck, AlertTriangle, RefreshCw, ScanLine, Lock, Server, Share2, CheckCircle2, Loader2, Database, Wifi, Smartphone, PieChart as PieChartIcon, Activity, WifiOff, AlertCircle, Tag, Folder, AlignLeft, CreditCard, Wallet } from 'lucide-react';
 import { Sankey, Tooltip, ResponsiveContainer, Rectangle, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from 'recharts';
 import { formatCurrency, formatDate, calculateDebtPaydownPlan, PaydownPlan } from '../../utils';
+import { format } from 'date-fns/format';
 import { Modal, FormGroup, Input, Select, Button } from '../ui';
 
 // jsPDF wird global über CDN geladen, hier deklarieren wir es für TypeScript.
@@ -19,7 +20,8 @@ const TransactionModal: React.FC<{ transaction?: Transaction }> = memo(({ transa
         if (transaction) return { ...transaction, categoryId: transaction.categoryId || '', goalId: transaction.goalId || '', liabilityId: transaction.liabilityId || '', tags: transaction.tags || [] };
         return {
             type: TransactionType.EXPENSE, amount: 0, description: '',
-            date: new Date().toISOString().split('T')[0], categoryId: '', goalId: '', liabilityId: '',
+            date: format(new Date(), 'yyyy-MM-dd'),
+            categoryId: '', goalId: '', liabilityId: '',
             tags: viewMode === 'private' ? ['privat'] : viewMode === 'business' ? ['business'] : [],
         };
     }, [transaction, viewMode]);
@@ -28,17 +30,50 @@ const TransactionModal: React.FC<{ transaction?: Transaction }> = memo(({ transa
 
     const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: name === 'amount' ? parseFloat(value) : value }));
+        
+        if (name === 'amount') {
+            const floatVal = parseFloat(value);
+            // Prevent negative values in state
+            if (floatVal < 0) return;
+            setFormData(prev => ({ ...prev, amount: isNaN(floatVal) ? 0 : floatVal }));
+        } else {
+            setFormData(prev => ({ ...prev, [name]: value }));
+        }
     }, []);
+    
+    // Prevent typing invalid characters for amounts
+    const handleAmountKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === '-' || e.key === 'e' || e.key === '+') {
+            e.preventDefault();
+        }
+    };
     
     const handleSubmit = useCallback((e: React.FormEvent) => {
         e.preventDefault();
+        
+        // Strict validation
+        if (formData.amount <= 0) {
+            alert("Bitte geben Sie einen positiven Betrag ein.");
+            return;
+        }
+        if (!formData.description.trim()) {
+            alert("Bitte geben Sie eine Beschreibung ein.");
+            return;
+        }
+
         if(transaction) {
             dispatch({ type: 'UPDATE_TRANSACTION', payload: { ...formData, id: transaction.id } });
         } else {
             dispatch({ type: 'ADD_TRANSACTION', payload: formData });
         }
     }, [dispatch, formData, transaction]);
+
+    const handleDelete = useCallback(() => {
+        if (transaction && window.confirm("Möchten Sie diese Transaktion wirklich löschen?")) {
+            dispatch({ type: 'DELETE_TRANSACTIONS', payload: [transaction.id] });
+            dispatch({ type: 'CLOSE_MODAL' });
+        }
+    }, [dispatch, transaction]);
 
     const relevantLiabilities = useMemo(() => {
         if (formData.type === TransactionType.EXPENSE) {
@@ -50,55 +85,282 @@ const TransactionModal: React.FC<{ transaction?: Transaction }> = memo(({ transa
         return [];
     }, [formData.type, liabilities]);
 
+    const isExpense = formData.type === TransactionType.EXPENSE;
+    const isIncome = formData.type === TransactionType.INCOME;
+    const isSaving = formData.type === TransactionType.SAVING;
+
+    // Dynamic styles based on transaction type
+    const activeRingColor = isExpense ? 'focus-within:ring-destructive/50' : isIncome ? 'focus-within:ring-success/50' : 'focus-within:ring-blue-500/50';
+    const activeBorderColor = isExpense ? 'focus-within:border-destructive' : isIncome ? 'focus-within:border-success' : 'focus-within:border-blue-500';
+    const iconColor = isExpense ? 'text-destructive' : isIncome ? 'text-success' : 'text-blue-500';
+
     return (
-        <form onSubmit={handleSubmit} className="space-y-4">
-            <FormGroup label="Beschreibung" htmlFor="description">
-                <Input type="text" id="description" name="description" value={formData.description} onChange={handleChange} required />
-            </FormGroup>
-            <div className="grid grid-cols-2 gap-4">
-                <FormGroup label="Betrag" htmlFor="amount">
-                    <Input type="number" id="amount" name="amount" value={formData.amount} onChange={handleChange} required step="0.01" />
-                </FormGroup>
-                <FormGroup label="Datum" htmlFor="date">
-                    <Input type="date" id="date" name="date" value={formData.date} onChange={handleChange} required />
-                </FormGroup>
+        <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Segmented Control */}
+            <div className="flex bg-secondary/50 p-1 rounded-xl">
+                {[TransactionType.EXPENSE, TransactionType.INCOME, TransactionType.SAVING].map((t) => {
+                    const isActive = formData.type === t;
+                    let activeClass = '';
+                    if (isActive) {
+                        if (t === TransactionType.EXPENSE) activeClass = 'bg-background text-destructive shadow-sm';
+                        else if (t === TransactionType.INCOME) activeClass = 'bg-background text-success shadow-sm';
+                        else activeClass = 'bg-background text-blue-500 shadow-sm';
+                    } else {
+                        activeClass = 'text-muted-foreground hover:text-foreground hover:bg-secondary/50';
+                    }
+
+                    return (
+                        <button
+                            key={t}
+                            type="button"
+                            onClick={() => setFormData(prev => ({ ...prev, type: t }))}
+                            className={`flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 ${activeClass}`}
+                        >
+                            {t === TransactionType.EXPENSE ? 'Ausgabe' : t === TransactionType.INCOME ? 'Einnahme' : 'Sparen'}
+                        </button>
+                    );
+                })}
             </div>
-             <FormGroup label="Typ" htmlFor="type">
-                <Select name="type" id="type" value={formData.type} onChange={handleChange}>
-                    <option value={TransactionType.EXPENSE}>Ausgabe</option>
-                    <option value={TransactionType.INCOME}>Einnahme</option>
-                    <option value={TransactionType.SAVING}>Sparen</option>
-                </Select>
-            </FormGroup>
-            <FormGroup label="Kategorie" htmlFor="categoryId">
-                <Select name="categoryId" id="categoryId" value={formData.categoryId} onChange={handleChange}>
-                    <option value="">Keine Kategorie</option>
-                    {categories.filter(c => c.type === (formData.type === 'income' ? 'income' : 'expense')).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </Select>
-            </FormGroup>
-            {formData.type === TransactionType.SAVING && goals.length > 0 && (
-                 <FormGroup label="Sparziel zuordnen" htmlFor="goalId">
-                    <Select name="goalId" id="goalId" value={formData.goalId} onChange={handleChange}>
-                        <option value="">Kein Ziel</option>
-                        {goals.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                    </Select>
-                </FormGroup>
-            )}
-             {relevantLiabilities.length > 0 && (
-                <FormGroup label="Schuld/Forderung zuordnen" htmlFor="liabilityId">
-                    <Select name="liabilityId" id="liabilityId" value={formData.liabilityId} onChange={handleChange}>
-                        <option value="">Keine Zuordnung</option>
-                        {relevantLiabilities.map(l => (
-                            <option key={l.id} value={l.id}>{l.name} ({formatCurrency(l.initialAmount - l.paidAmount)} offen)</option>
-                        ))}
-                    </Select>
-                </FormGroup>
-            )}
-            <div className="flex justify-end space-x-2 pt-4">
-                <Button type="button" onClick={() => dispatch({type: 'CLOSE_MODAL'})}>Abbrechen</Button>
-                <Button type="submit" variant="primary">Speichern</Button>
+
+            {/* Hero Amount Input */}
+            <div className={`relative rounded-2xl bg-card border border-border transition-all duration-300 ${activeRingColor} ${activeBorderColor} ring-1 ring-transparent`}>
+                <div className="absolute top-3 left-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">Betrag</div>
+                <div className="flex items-center justify-center py-6 px-4">
+                    <span className={`text-4xl font-bold mr-2 ${iconColor}`}>€</span>
+                    <input 
+                        type="number" 
+                        name="amount" 
+                        value={formData.amount || ''} 
+                        onChange={handleChange}
+                        onKeyDown={handleAmountKeyDown}
+                        required 
+                        min="0.01"
+                        step="0.01" 
+                        className="w-full text-center text-5xl font-bold bg-transparent border-none focus:ring-0 p-0 text-foreground placeholder-muted-foreground/30"
+                        placeholder="0,00"
+                        autoFocus={!transaction}
+                    />
+                </div>
+            </div>
+
+            {/* Details Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground ml-1">Beschreibung</label>
+                    <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted-foreground">
+                            <AlignLeft size={16} />
+                        </div>
+                        <Input 
+                            type="text" 
+                            name="description" 
+                            value={formData.description} 
+                            onChange={handleChange} 
+                            required 
+                            placeholder="Wofür?" 
+                            className="pl-9 bg-secondary/30 border-transparent focus:bg-background transition-all"
+                        />
+                    </div>
+                </div>
+
+                <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground ml-1">Datum</label>
+                    <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted-foreground">
+                            <Calendar size={16} />
+                        </div>
+                        <Input 
+                            type="date" 
+                            name="date" 
+                            value={formData.date} 
+                            onChange={handleChange} 
+                            required 
+                            className="pl-9 bg-secondary/30 border-transparent focus:bg-background transition-all"
+                        />
+                    </div>
+                </div>
+
+                <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground ml-1">Kategorie</label>
+                    <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted-foreground">
+                            <Folder size={16} />
+                        </div>
+                        <Select 
+                            name="categoryId" 
+                            value={formData.categoryId} 
+                            onChange={handleChange}
+                            className="pl-9 bg-secondary/30 border-transparent focus:bg-background transition-all"
+                        >
+                            <option value="">Keine Kategorie</option>
+                            {categories.filter(c => c.type === (isIncome ? 'income' : 'expense')).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </Select>
+                    </div>
+                </div>
+
+                {/* Conditional Inputs */}
+                {isSaving && goals.length > 0 && (
+                     <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-muted-foreground ml-1">Sparziel</label>
+                        <div className="relative">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-blue-500">
+                                <PiggyBank size={16} />
+                            </div>
+                            <Select 
+                                name="goalId" 
+                                value={formData.goalId} 
+                                onChange={handleChange} 
+                                className="pl-9 bg-blue-500/5 border-blue-500/20 focus:border-blue-500 focus:ring-blue-500/20 text-foreground"
+                            >
+                                <option value="">Kein Ziel</option>
+                                {goals.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                            </Select>
+                        </div>
+                    </div>
+                )}
+                 {relevantLiabilities.length > 0 && (
+                    <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-muted-foreground ml-1">Zuordnung</label>
+                        <div className="relative">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-orange-500">
+                                <Wallet size={16} />
+                            </div>
+                            <Select 
+                                name="liabilityId" 
+                                value={formData.liabilityId} 
+                                onChange={handleChange} 
+                                className="pl-9 bg-orange-500/5 border-orange-500/20 focus:border-orange-500 focus:ring-orange-500/20 text-foreground"
+                            >
+                                <option value="">Keine</option>
+                                {relevantLiabilities.map(l => (
+                                    <option key={l.id} value={l.id}>{l.name} ({formatCurrency(l.initialAmount - l.paidAmount)} offen)</option>
+                                ))}
+                            </Select>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            <div className="flex items-center justify-between pt-6 border-t border-border/20">
+                {transaction ? (
+                    <Button type="button" variant="destructive" onClick={handleDelete} className="flex items-center gap-2 bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground border-transparent">
+                        <Trash2 size={16} /> Löschen
+                    </Button>
+                ) : <div></div>}
+                
+                <div className="flex space-x-3">
+                    <Button type="button" onClick={() => dispatch({type: 'CLOSE_MODAL'})}>Abbrechen</Button>
+                    <Button type="submit" variant="primary" className="px-8 shadow-lg shadow-primary/20">Speichern</Button>
+                </div>
             </div>
         </form>
+    );
+});
+
+const TransactionDetailModal: React.FC<{ transaction: Transaction }> = memo(({ transaction }) => {
+    const { categories, goals, liabilities } = useAppState();
+    const dispatch = useAppDispatch();
+
+    const category = categories.find(c => c.id === transaction.categoryId);
+    const goal = goals.find(g => g.id === transaction.goalId);
+    const liability = liabilities.find(l => l.id === transaction.liabilityId);
+
+    const isIncome = transaction.type === TransactionType.INCOME;
+    const isSaving = transaction.type === TransactionType.SAVING;
+    
+    const amountColor = isIncome ? 'text-success' : isSaving ? 'text-blue-500' : 'text-destructive';
+    const amountBg = isIncome ? 'bg-success/10' : isSaving ? 'bg-blue-500/10' : 'bg-destructive/10';
+    const sign = isIncome ? '+' : isSaving ? '' : '-';
+
+    const handleEdit = () => {
+        dispatch({ type: 'OPEN_MODAL', payload: { type: 'EDIT_TRANSACTION', data: { transaction } } });
+    };
+
+    return (
+        <div className="space-y-6">
+            <div className={`flex flex-col items-center justify-center p-8 rounded-3xl ${amountBg} border border-border/5 relative overflow-hidden`}>
+                <div className={`absolute inset-0 bg-gradient-to-br from-white/20 to-transparent opacity-50`}></div>
+                <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2 relative z-10">Betrag</span>
+                <span className={`text-5xl font-bold font-mono ${amountColor} relative z-10`}>
+                    {sign}{formatCurrency(transaction.amount)}
+                </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+                <div className="bg-secondary/30 p-3 rounded-2xl flex items-center gap-3 border border-transparent hover:border-border/50 transition-colors">
+                    <div className="p-2.5 bg-background rounded-xl text-muted-foreground shadow-sm">
+                        <Calendar size={20} />
+                    </div>
+                    <div>
+                        <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Datum</p>
+                        <p className="font-semibold text-sm">{formatDate(transaction.date)}</p>
+                    </div>
+                </div>
+                <div className="bg-secondary/30 p-3 rounded-2xl flex items-center gap-3 border border-transparent hover:border-border/50 transition-colors">
+                    <div className="p-2.5 bg-background rounded-xl text-muted-foreground shadow-sm">
+                        <Folder size={20} />
+                    </div>
+                    <div>
+                        <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Kategorie</p>
+                        <p className="font-semibold text-sm truncate">{category?.name || 'Unkategorisiert'}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div className="bg-secondary/30 p-5 rounded-2xl border border-transparent hover:border-border/50 transition-colors">
+                <div className="flex items-center gap-2 mb-2 text-muted-foreground">
+                    <AlignLeft size={16} />
+                    <span className="text-[10px] font-bold uppercase tracking-wider">Beschreibung</span>
+                </div>
+                <p className="text-foreground font-medium text-lg">{transaction.description}</p>
+            </div>
+
+            {(transaction.tags && transaction.tags.length > 0) && (
+                <div className="bg-secondary/30 p-4 rounded-2xl">
+                    <div className="flex items-center gap-2 mb-3 text-muted-foreground">
+                        <Tag size={16} />
+                        <span className="text-[10px] font-bold uppercase tracking-wider">Tags</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        {transaction.tags.map(tag => (
+                            <span key={tag} className="px-3 py-1 bg-background rounded-full text-xs font-semibold text-muted-foreground border border-border shadow-sm">
+                                #{tag}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {goal && (
+                <div className="bg-blue-500/5 border border-blue-500/10 p-4 rounded-2xl flex items-center gap-4">
+                    <div className="p-3 bg-blue-500/10 text-blue-500 rounded-full">
+                        <PiggyBank size={24} />
+                    </div>
+                    <div>
+                        <p className="text-xs font-bold text-blue-500/80 uppercase tracking-wider">Sparziel</p>
+                        <p className="font-bold text-lg text-blue-600 dark:text-blue-400">{goal.name}</p>
+                    </div>
+                </div>
+            )}
+
+            {liability && (
+                <div className="bg-orange-500/5 border border-orange-500/10 p-4 rounded-2xl flex items-center gap-4">
+                    <div className="p-3 bg-orange-500/10 text-orange-500 rounded-full">
+                        <CreditCard size={24} />
+                    </div>
+                    <div>
+                        <p className="text-xs font-bold text-orange-500/80 uppercase tracking-wider">Verbindlichkeit</p>
+                        <p className="font-bold text-lg text-orange-600 dark:text-orange-400">{liability.name}</p>
+                    </div>
+                </div>
+            )}
+
+            <div className="flex justify-end pt-6 border-t border-border/20">
+                <Button onClick={handleEdit} variant="primary" className="flex items-center gap-2 rounded-full px-6">
+                    <Edit size={16} /> Bearbeiten
+                </Button>
+            </div>
+        </div>
     );
 });
 
@@ -107,10 +369,9 @@ const SmartScanModal: React.FC = memo(() => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const [stream, setStream] = useState<MediaStream | null>(null);
-    const [isLoading, setIsLoading] = useState(false); // For AI scan
+    const [isLoading, setIsLoading] = useState(false);
     const [isCameraStarting, setIsCameraStarting] = useState(true);
     const [error, setError] = useState<{ type: string; message: string } | null>(null);
-    // New state to hold captured image to display while loading
     const [capturedImage, setCapturedImage] = useState<string | null>(null);
 
     const stopCamera = useCallback(() => {
@@ -118,12 +379,14 @@ const SmartScanModal: React.FC = memo(() => {
             streamRef.current.getTracks().forEach(track => track.stop());
             streamRef.current = null;
         }
+        if (videoRef.current) {
+            videoRef.current.srcObject = null;
+        }
         setStream(null);
     }, []);
 
     const startCamera = useCallback(async () => {
-        stopCamera(); // Ensure previous stream is closed
-        
+        stopCamera();
         setIsCameraStarting(true);
         setError(null);
         setCapturedImage(null);
@@ -136,43 +399,24 @@ const SmartScanModal: React.FC = memo(() => {
 
         try {
             const mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-            setStream(mediaStream);
             streamRef.current = mediaStream;
+            setStream(mediaStream);
             if (videoRef.current) {
                 videoRef.current.srcObject = mediaStream;
+                videoRef.current.onloadedmetadata = () => {
+                    videoRef.current?.play().catch(e => console.error("Play error:", e));
+                };
             }
         } catch (err: any) {
-            const errorName = err?.name || '';
-            const errorMessage = err?.message || (typeof err === 'string' ? err : '');
-
-            const isPermissionError = 
-                errorName === 'NotAllowedError' || 
-                errorName === 'PermissionDeniedError' || 
-                errorMessage.toLowerCase().includes('permission denied') ||
-                errorMessage.toLowerCase().includes('permission dismissed');
-
-            if (!isPermissionError) {
-                console.error("Camera Error:", err);
-            } else {
-                console.warn("Camera permission denied by user.");
-            }
-
             let message = "Ein unbekannter Kamerafehler ist aufgetreten.";
             let errorType = 'GenericError';
-            
-            if (isPermissionError) {
+            if (err?.name === 'NotAllowedError') {
                 errorType = 'NotAllowedError';
                 message = "Kamerazugriff wurde verweigert.";
-            } else if (errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError') {
+            } else if (err?.name === 'NotFoundError') {
                 errorType = 'NotFoundError';
-                message = "Keine passende Kamera gefunden. Stellen Sie sicher, dass eine Kamera angeschlossen ist.";
-            } else if (errorName === 'NotReadableError' || errorName === 'TrackStartError') {
-                errorType = 'NotReadableError';
-                message = "Die Kamera wird bereits von einer anderen Anwendung verwendet oder ist defekt.";
-            } else if (errorMessage) {
-                 message = errorMessage;
+                message = "Keine Kamera gefunden.";
             }
-            
             setError({ type: errorType, message });
         } finally {
             setIsCameraStarting(false);
@@ -181,9 +425,7 @@ const SmartScanModal: React.FC = memo(() => {
 
     useEffect(() => {
         startCamera();
-        return () => {
-            stopCamera();
-        };
+        return () => stopCamera();
     }, [startCamera, stopCamera]);
 
     const handleScan = useCallback(async () => {
@@ -191,52 +433,44 @@ const SmartScanModal: React.FC = memo(() => {
             setError({ type: 'OfflineError', message: 'Sie sind offline. Der Beleg kann nicht analysiert werden.' });
             return;
         }
-
-        if (!videoRef.current || !videoRef.current.srcObject) {
+        if (!videoRef.current || !streamRef.current) {
             setError({ type: 'NotReadyError', message: 'Kamera ist nicht bereit.'});
             return;
         }
         setIsLoading(true);
         setError(null);
         
-        const canvas = document.createElement('canvas');
-        canvas.width = videoRef.current.videoWidth;
-        canvas.height = videoRef.current.videoHeight;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            setError({ type: 'CanvasError', message: 'Fehler beim Erfassen des Bildes.' });
-            setIsLoading(false);
-            return;
-        }
-        ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-        
-        // Capture image and stop camera immediately for better UX
-        const base64FullData = canvas.toDataURL('image/jpeg', 0.8);
-        setCapturedImage(base64FullData);
-        stopCamera();
-
-        const base64Data = base64FullData.split(',')[1];
-
         try {
+            const canvas = document.createElement('canvas');
+            canvas.width = videoRef.current.videoWidth;
+            canvas.height = videoRef.current.videoHeight;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) throw new Error('Canvas Context Error');
+            
+            ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+            const base64FullData = canvas.toDataURL('image/jpeg', 0.8);
+            setCapturedImage(base64FullData);
+            stopCamera();
+
+            const base64Data = base64FullData.split(',')[1];
             if (!process.env.API_KEY) throw new Error("API_KEY ist nicht konfiguriert.");
 
             const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
-
             const responseSchema = {
                 type: Type.OBJECT,
                 properties: {
-                    description: { type: Type.STRING, description: "Der Name des Händlers oder Geschäfts." },
-                    amount: { type: Type.NUMBER, description: "Der Gesamtbetrag der Transaktion." },
-                    date: { type: Type.STRING, description: "Das Transaktionsdatum im Format YYYY-MM-DD." },
+                    description: { type: Type.STRING, description: "Name des Händlers oder kurze Beschreibung" },
+                    amount: { type: Type.NUMBER, description: "Gesamtbetrag" },
+                    date: { type: Type.STRING, description: "Datum (YYYY-MM-DD)" },
                 },
                 required: ["description", "amount", "date"]
             };
 
             const response = await ai.models.generateContent({
-                model: "gemini-2.5-flash",
+                model: "gemini-2.5-flash-latest",
                 contents: [{
                     parts: [
-                        { text: "Extrahiere die Details von diesem Beleg." },
+                        { text: "Extrahiere Händler, Betrag und Datum von diesem Beleg. Formatiere das Datum als YYYY-MM-DD. Wenn kein Datum gefunden wird, nimm das heutige." },
                         { inlineData: { mimeType: 'image/jpeg', data: base64Data } }
                     ]
                 }],
@@ -246,21 +480,28 @@ const SmartScanModal: React.FC = memo(() => {
                 },
             });
             
-            const jsonStr = response.text.trim();
-            const result = JSON.parse(jsonStr);
+            let rawText = response.text || "{}";
+            // Robust parsing: Find the first '{' and last '}' to handle potential markdown wrappers or extra text.
+            const firstBrace = rawText.indexOf('{');
+            const lastBrace = rawText.lastIndexOf('}');
+            
+            if (firstBrace !== -1 && lastBrace !== -1) {
+                rawText = rawText.substring(firstBrace, lastBrace + 1);
+            }
+            
+            const result = JSON.parse(rawText);
             
             dispatch({ type: 'ADD_TRANSACTION', payload: {
-                description: result.description || 'Gescannte Transaktion',
+                description: result.description || 'Gescannter Beleg',
                 amount: typeof result.amount === 'number' ? result.amount : 0,
-                date: result.date || new Date().toISOString().split('T')[0],
+                date: result.date || format(new Date(), 'yyyy-MM-dd'),
                 type: TransactionType.EXPENSE,
                 tags: ['gescannt']
             }});
             dispatch({ type: 'CLOSE_MODAL' });
-        } catch (e) {
+        } catch (e: any) {
             console.error("Smart Scan Error:", e);
-            setError({ type: 'ScanError', message: 'Analyse fehlgeschlagen. Der Beleg konnte nicht gelesen werden. Bitte versuchen Sie es erneut oder geben Sie die Daten manuell ein.' });
-            // If failed, we might want to restart camera or let user retry
+            setError({ type: 'ScanError', message: 'Beleg konnte nicht gelesen werden. Bitte versuchen Sie es erneut.' });
         } finally {
             setIsLoading(false);
         }
@@ -269,75 +510,59 @@ const SmartScanModal: React.FC = memo(() => {
     return (
         <div>
             {error && (
-                error.type === 'NotAllowedError' ? (
-                    <div className="p-4 mb-4 text-sm text-destructive-foreground bg-destructive rounded-lg flex flex-col items-center text-center gap-3" role="alert">
-                        <AlertTriangle className="h-8 w-8" />
-                        <h3 className="font-semibold text-lg">Kamerazugriff verweigert</h3>
-                        <p>
-                            Um Belege scannen zu können, benötigt Klaro Zugriff auf Ihre Kamera.
-                            Bitte aktivieren Sie den Kamerazugriff in Ihren Browser-Einstellungen und versuchen Sie es erneut.
-                        </p>
-                        <p className="text-xs text-destructive-foreground/80">
-                            Tipp: Suchen Sie nach dem Schloss-Symbol in der Adressleiste Ihres Browsers, um die Berechtigungen für diese Seite zu ändern.
-                        </p>
-                        <Button onClick={startCamera} variant="secondary" className="bg-destructive/20 hover:bg-destructive/40 border-destructive-foreground/50 text-destructive-foreground mt-2">
-                            Erneut versuchen
-                        </Button>
+                <div className="p-3 mb-4 text-sm text-destructive-foreground bg-destructive/10 border border-destructive/20 rounded-lg flex items-center justify-between gap-4" role="alert">
+                    <div className="flex items-center gap-2">
+                         <AlertTriangle className="h-4 w-4" />
+                         <span>{error.message}</span>
                     </div>
-                ) : (
-                    <div className="p-3 mb-4 text-sm text-destructive-foreground bg-destructive rounded-lg flex items-center justify-between gap-4" role="alert">
-                        <span>{error.message}</span>
-                        {error.type !== 'OfflineError' && (
-                             <Button onClick={startCamera} variant="secondary" className="bg-destructive/20 hover:bg-destructive/40 border-destructive-foreground/50 text-destructive-foreground flex-shrink-0">Erneut versuchen</Button>
-                        )}
-                    </div>
-                )
+                    {error.type !== 'OfflineError' && (
+                         <Button onClick={startCamera} variant="secondary" className="h-8 px-3 text-xs bg-destructive/20 hover:bg-destructive/30 border-transparent text-destructive-foreground flex-shrink-0">Erneut versuchen</Button>
+                    )}
+                </div>
             )}
-            <div className="relative w-full aspect-video bg-secondary rounded-lg overflow-hidden border-2 border-dashed border-border">
+            
+            <div className="relative w-full aspect-[4/3] bg-black rounded-lg overflow-hidden border border-border shadow-inner">
                 {capturedImage ? (
-                    <img src={capturedImage} alt="Captured" className="w-full h-full object-cover" />
+                    <img src={capturedImage} alt="Captured" className="w-full h-full object-contain" />
                 ) : (
                     <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
                 )}
                 
                 {isCameraStarting && !capturedImage && (
-                    <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-primary-foreground animate-fade-in">
-                        <Camera className="h-10 w-10 animate-pulse mb-4" />
-                        <span className="text-lg font-semibold">Kamera wird gestartet...</span>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-white/80">
+                        <Camera className="h-10 w-10 animate-pulse mb-2" />
+                        <span className="text-sm">Kamera startet...</span>
                     </div>
                 )}
+                
                  {stream && !isLoading && !isCameraStarting && (
-                    <>
-                        <div className="absolute inset-0 bg-transparent border-primary/50 border-8 rounded-lg" style={{ clipPath: 'polygon(0% 0%, 0% 100%, 25% 100%, 25% 25%, 75% 25%, 75% 75%, 25% 75%, 25% 100%, 100% 100%, 100% 0%)' }}></div>
-                        <div className="absolute top-0 left-0 right-0 h-1 bg-primary/80 shadow-[0_0_20px_3px_hsl(var(--primary))] animate-scan-line"></div>
-                    </>
+                    <div className="absolute inset-0 pointer-events-none">
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80%] h-[60%] border-2 border-primary/70 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]"></div>
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80%] h-[2px] bg-primary/80 shadow-[0_0_10px_2px_hsl(var(--primary))] animate-scan-line"></div>
+                    </div>
                 )}
+                
                 {isLoading && (
-                    <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-primary-foreground animate-fade-in">
-                        <Sparkles className="h-10 w-10 text-primary animate-pulse mb-4" />
-                        <span className="text-lg font-semibold">Beleg wird analysiert...</span>
-                        <span className="text-sm">Bitte haben Sie einen Moment Geduld.</span>
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center text-white animate-fade-in">
+                        <Sparkles className="h-12 w-12 text-primary animate-spin-slow mb-4" />
+                        <span className="text-lg font-bold">Analysiere Beleg...</span>
                     </div>
                 )}
             </div>
-            <div className="mt-6 flex justify-center">
+            
+            <div className="mt-6 flex justify-center gap-4">
                 {capturedImage && error ? (
-                     <Button 
-                        onClick={startCamera} 
-                        variant="primary" 
-                        className="px-8 py-4 rounded-full flex items-center space-x-3 text-lg font-bold"
-                    >
-                        <span>Erneut scannen</span>
-                    </Button>
-                ) : (
+                     <Button onClick={startCamera} variant="secondary">Abbrechen & Neu</Button>
+                ) : null}
+                
+                {!capturedImage && (
                     <Button 
                         onClick={handleScan} 
                         disabled={isLoading || !!error || !stream || isCameraStarting} 
                         variant="primary" 
-                        className="px-8 py-4 rounded-full flex items-center space-x-3 text-lg font-bold transform hover:scale-105"
-                        aria-label="Beleg scannen"
+                        className="px-8 py-6 rounded-full flex items-center gap-3 text-lg font-bold shadow-lg hover:shadow-primary/25 transition-all"
                     >
-                        <Camera size={24} /> <span>Jetzt Scannen</span>
+                        <ScanLine size={24} /> <span>Scannen</span>
                     </Button>
                 )}
             </div>
@@ -345,15 +570,7 @@ const SmartScanModal: React.FC = memo(() => {
     );
 });
 
-const CategoryItem = memo(({ category, onUpdate, onDelete, onDragStart, onDragOver, onDrop, onDragEnd }: { 
-    category: Category; 
-    onUpdate: (c: Category) => void; 
-    onDelete: (c: Category) => void;
-    onDragStart: (e: React.DragEvent<HTMLDivElement>, c: Category) => void;
-    onDragOver: (e: React.DragEvent<HTMLDivElement>) => void;
-    onDrop: (e: React.DragEvent<HTMLDivElement>, c: Category) => void;
-    onDragEnd: (e: React.DragEvent<HTMLDivElement>) => void;
-}) => {
+const CategoryItem = memo(({ category, onUpdate, onDelete, onDragStart, onDragOver, onDrop, onDragEnd, count }: any) => {
     const [name, setName] = useState(category.name);
     const [isEditing, setIsEditing] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -385,13 +602,22 @@ const CategoryItem = memo(({ category, onUpdate, onDelete, onDragStart, onDragOv
             {isEditing ? (
                 <Input ref={inputRef} value={name} onChange={(e) => setName(e.target.value)} onBlur={handleUpdate} onKeyDown={(e) => e.key === 'Enter' && handleUpdate()} />
             ) : (
-                <span className="flex-grow font-medium" onClick={() => setIsEditing(true)}>{category.name}</span>
+                <span className="flex-grow font-medium cursor-pointer" onClick={() => setIsEditing(true)}>{category.name}</span>
             )}
+            <span className="text-xs text-muted-foreground bg-secondary px-2 py-1 rounded-full" title={`${count} Transaktionen`}>{count}</span>
             <button onClick={() => setIsEditing(true)} className="p-1 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"><Edit size={14} /></button>
             {category.type === CategoryType.EXPENSE && (
                 <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">€</span>
-                    <Input type="number" placeholder="Budget" defaultValue={category.budget} onBlur={handleBudgetUpdate} className="w-28 pl-6 pr-2 py-1 text-right" />
+                    <Input 
+                        type="number" 
+                        placeholder="Budget" 
+                        defaultValue={category.budget} 
+                        onBlur={handleBudgetUpdate} 
+                        className="w-28 pl-6 pr-2 py-1 text-right" 
+                        min="0"
+                        onKeyDown={(e) => (e.key === '-' || e.key === 'e') && e.preventDefault()}
+                    />
                 </div>
             )}
             <button onClick={() => onDelete(category)} className="p-2 text-muted-foreground hover:text-destructive"><Trash2 size={16} /></button>
@@ -405,7 +631,6 @@ const CategoryManagerModal: React.FC = memo(() => {
     const [newCategoryName, setNewCategoryName] = useState('');
     const [draggedCategory, setDraggedCategory] = useState<Category | null>(null);
 
-    // Get order from localStorage on mount
     useEffect(() => {
         const storedOrder = localStorage.getItem('categoryOrder');
         if (storedOrder) {
@@ -426,9 +651,9 @@ const CategoryManagerModal: React.FC = memo(() => {
                 console.error("Failed to parse category order from localStorage", e);
             }
         }
-    }, []); // Run only once
+    }, []); 
 
-    const { categories } = useAppState(); // Use the potentially reordered state
+    const { categories } = useAppState();
 
     const incomeCategories = useMemo(() => categories.filter(c => c.type === CategoryType.INCOME), [categories]);
     const expenseCategories = useMemo(() => categories.filter(c => c.type === CategoryType.EXPENSE), [categories]);
@@ -505,12 +730,13 @@ const CategoryManagerModal: React.FC = memo(() => {
                         <CategoryItem 
                             key={c.id} 
                             category={c} 
-                            onUpdate={(cat) => dispatch({type:'UPDATE_CATEGORY', payload: cat})} 
+                            onUpdate={(cat: Category) => dispatch({type:'UPDATE_CATEGORY', payload: cat})} 
                             onDelete={handleDelete}
                             onDragStart={handleDragStart}
                             onDragOver={handleDragOver}
                             onDrop={handleDrop}
                             onDragEnd={handleDragEnd}
+                            count={usageCount.get(c.id) || 0}
                         />)
                     }
                 </div>
@@ -520,15 +746,170 @@ const CategoryManagerModal: React.FC = memo(() => {
                         <CategoryItem 
                             key={c.id} 
                             category={c} 
-                            onUpdate={(cat) => dispatch({type:'UPDATE_CATEGORY', payload: cat})} 
+                            onUpdate={(cat: Category) => dispatch({type:'UPDATE_CATEGORY', payload: cat})} 
                             onDelete={handleDelete}
                             onDragStart={handleDragStart}
                             onDragOver={handleDragOver}
                             onDrop={handleDrop}
                             onDragEnd={handleDragEnd}
+                            count={usageCount.get(c.id) || 0}
                         />)
                     }
                 </div>
+            </div>
+        </div>
+    );
+});
+
+const ManageGoalsModal: React.FC = memo(() => {
+    const { goals } = useAppState();
+    const dispatch = useAppDispatch();
+    const [name, setName] = useState('');
+    const [targetAmount, setTargetAmount] = useState(0);
+    const [type, setType] = useState<GoalType>(GoalType.GOAL);
+    const [editingId, setEditingId] = useState<string | null>(null);
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (targetAmount < 0) {
+            alert("Der Zielbetrag muss positiv sein.");
+            return;
+        }
+
+        if (editingId) {
+            const goal = goals.find(g => g.id === editingId);
+            if(goal) {
+                    dispatch({ type: 'UPDATE_GOAL', payload: { ...goal, name, targetAmount, type } });
+            }
+            setEditingId(null);
+        } else {
+            dispatch({ type: 'ADD_GOAL', payload: { name, targetAmount, type } });
+        }
+        setName('');
+        setTargetAmount(0);
+        setType(GoalType.GOAL);
+    };
+    
+    const handleEdit = (goal: Goal) => {
+        setName(goal.name);
+        setTargetAmount(goal.targetAmount);
+        setType(goal.type);
+        setEditingId(goal.id);
+    };
+
+    const handleCancel = () => {
+        setEditingId(null);
+        setName('');
+        setTargetAmount(0);
+        setType(GoalType.GOAL);
+    }
+    
+    const handleAmountKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === '-' || e.key === 'e' || e.key === '+') e.preventDefault();
+    };
+
+    return (
+        <div className="space-y-6">
+            <form onSubmit={handleSubmit} className="p-4 bg-secondary/50 rounded-lg space-y-4">
+                <h4 className="font-semibold text-lg">{editingId ? 'Ziel bearbeiten' : 'Neues Ziel'}</h4>
+                <FormGroup label="Name"><Input value={name} onChange={e => setName(e.target.value)} required /></FormGroup>
+                <div className="grid grid-cols-2 gap-4">
+                    <FormGroup label="Zielbetrag">
+                        <Input 
+                            type="number" 
+                            value={targetAmount || ''} 
+                            onChange={e => {
+                                const val = parseFloat(e.target.value);
+                                if (val >= 0 || e.target.value === '') setTargetAmount(isNaN(val) ? 0 : val);
+                            }}
+                            onKeyDown={handleAmountKeyDown}
+                            required 
+                            min="0.01" 
+                            step="0.01" 
+                        />
+                    </FormGroup>
+                    <FormGroup label="Typ"><Select value={type} onChange={e => setType(e.target.value as GoalType)}><option value={GoalType.GOAL}>Sparziel</option><option value={GoalType.SINKING_FUND}>Rücklage (Sinking Fund)</option></Select></FormGroup>
+                </div>
+                    <div className="flex justify-end gap-2 pt-2">
+                        {editingId && <Button type="button" onClick={handleCancel}>Abbrechen</Button>}
+                    <Button type="submit" variant="primary">{editingId ? 'Speichern' : 'Hinzufügen'}</Button>
+                </div>
+            </form>
+            <div className="space-y-2">
+                    {goals.map(g => (
+                    <div key={g.id} className="flex justify-between items-center p-3 bg-secondary/30 rounded-lg hover:bg-secondary/50 transition-colors">
+                        <div>
+                            <p className="font-medium">{g.name} <span className="text-xs text-muted-foreground">({g.type === GoalType.GOAL ? 'Ziel' : 'Rücklage'})</span></p>
+                            <p className="text-sm text-muted-foreground">{formatCurrency(g.currentAmount)} / {formatCurrency(g.targetAmount)}</p>
+                        </div>
+                        <div className="flex gap-1">
+                            <button onClick={() => handleEdit(g)} className="p-2 text-muted-foreground hover:text-foreground"><Edit size={16}/></button>
+                            <button onClick={() => window.confirm('Ziel löschen?') && dispatch({type: 'DELETE_GOAL', payload: g.id})} className="p-2 text-muted-foreground hover:text-destructive"><Trash2 size={16}/></button>
+                        </div>
+                    </div>
+                    ))}
+            </div>
+        </div>
+    );
+});
+
+const ManageProjectsModal: React.FC = memo(() => {
+    const { projects } = useAppState();
+    const dispatch = useAppDispatch();
+    const [name, setName] = useState('');
+    const [tag, setTag] = useState('');
+    const [editingId, setEditingId] = useState<string | null>(null);
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+            if (editingId) {
+            const project = projects.find(p => p.id === editingId);
+            if(project) {
+                    dispatch({ type: 'UPDATE_PROJECT', payload: { ...project, name, tag } });
+            }
+            setEditingId(null);
+        } else {
+            dispatch({ type: 'ADD_PROJECT', payload: { name, tag } });
+        }
+        setName('');
+        setTag('');
+    };
+
+    const handleEdit = (p: Project) => {
+        setName(p.name);
+        setTag(p.tag);
+        setEditingId(p.id);
+    };
+    
+        const handleCancel = () => {
+        setEditingId(null);
+        setName('');
+        setTag('');
+    }
+
+    return (
+        <div className="space-y-6">
+            <form onSubmit={handleSubmit} className="p-4 bg-secondary/50 rounded-lg space-y-4">
+                <h4 className="font-semibold text-lg">{editingId ? 'Projekt bearbeiten' : 'Neues Projekt'}</h4>
+                    <FormGroup label="Projektname"><Input value={name} onChange={e => setName(e.target.value)} required /></FormGroup>
+                    <FormGroup label="Tag (für Transaktionen)"><Input value={tag} onChange={e => setTag(e.target.value)} required placeholder="z.B. projekt-a" /></FormGroup>
+                    <div className="flex justify-end gap-2 pt-2">
+                        {editingId && <Button type="button" onClick={handleCancel}>Abbrechen</Button>}<Button type="submit" variant="primary">{editingId ? 'Speichern' : 'Hinzufügen'}</Button>
+                </div>
+            </form>
+            <div className="space-y-2">
+                    {projects.map(p => (
+                    <div key={p.id} className="flex justify-between items-center p-3 bg-secondary/30 rounded-lg hover:bg-secondary/50 transition-colors">
+                        <div>
+                            <p className="font-medium">{p.name}</p>
+                            <p className="text-sm text-muted-foreground">Tag: #{p.tag}</p>
+                        </div>
+                        <div className="flex gap-1">
+                            <button onClick={() => handleEdit(p)} className="p-2 text-muted-foreground hover:text-foreground"><Edit size={16}/></button>
+                            <button onClick={() => window.confirm('Projekt löschen?') && dispatch({type: 'DELETE_PROJECT', payload: p.id})} className="p-2 text-muted-foreground hover:text-destructive"><Trash2 size={16}/></button>
+                        </div>
+                    </div>
+                    ))}
             </div>
         </div>
     );
@@ -539,7 +920,7 @@ const RecurringManagerModal: React.FC = memo(() => {
     const dispatch = useAppDispatch();
     const [editingId, setEditingId] = useState<string | null>(null);
 
-    const initialFormData = useMemo(() => ({ description: '', amount: 0, type: TransactionType.EXPENSE, categoryId: '', frequency: Frequency.MONTHLY, interval: 1, startDate: new Date().toISOString().split('T')[0], endDate: '', isBill: false }), []);
+    const initialFormData = useMemo(() => ({ description: '', amount: 0, type: TransactionType.EXPENSE, categoryId: '', frequency: Frequency.MONTHLY, interval: 1, startDate: format(new Date(), 'yyyy-MM-dd'), endDate: '', isBill: false }), []);
     const [formData, setFormData] = useState<Omit<RecurringTransaction, 'id' | 'nextDueDate'>>(initialFormData);
     const categoriesMap = useMemo(() => new Map(categories.map(c => [c.id, c.name])), [categories]);
 
@@ -552,16 +933,42 @@ const RecurringManagerModal: React.FC = memo(() => {
     
     const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value, type } = e.target;
-        if (type === 'checkbox') setFormData(prev => ({ ...prev, [name]: (e.target as HTMLInputElement).checked }));
-        else setFormData(prev => ({ ...prev, [name]: (name === 'amount' || name === 'interval') ? parseFloat(value) : value }));
+        if (type === 'checkbox') {
+            setFormData(prev => ({ ...prev, [name]: (e.target as HTMLInputElement).checked }));
+        } else if (name === 'amount' || name === 'interval') {
+            const floatVal = parseFloat(value);
+            if (floatVal < 0) return;
+            setFormData(prev => ({ ...prev, [name]: isNaN(floatVal) ? 0 : floatVal }));
+        } else {
+            setFormData(prev => ({ ...prev, [name]: value }));
+        }
     }, []);
     
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        
+        if (formData.amount <= 0) {
+            alert("Bitte geben Sie einen positiven Betrag ein.");
+            return;
+        }
+        if (formData.interval <= 0) {
+            alert("Das Intervall muss größer als 0 sein.");
+            return;
+        }
+
         const data = { ...formData, endDate: formData.endDate || undefined };
-        if (editingId) dispatch({ type: 'UPDATE_RECURRING', payload: { ...data, id: editingId, nextDueDate: '' } });
-        else dispatch({ type: 'ADD_RECURRING', payload: data });
+        if (editingId) {
+             const originalTx = recurringTransactions.find(rt => rt.id === editingId);
+             const nextDueDate = originalTx?.nextDueDate || data.startDate; 
+             dispatch({ type: 'UPDATE_RECURRING', payload: { ...data, id: editingId, nextDueDate } });
+        } else {
+             dispatch({ type: 'ADD_RECURRING', payload: data });
+        }
         setEditingId(null);
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === '-' || e.key === 'e' || e.key === '+') e.preventDefault();
     };
     
     const formatFrequency = (rt: RecurringTransaction) => {
@@ -582,12 +989,29 @@ const RecurringManagerModal: React.FC = memo(() => {
                 <h4 className="font-semibold text-lg">{editingId ? 'Dauerauftrag bearbeiten' : 'Neuen Dauerauftrag anlegen'}</h4>
                 <FormGroup label="Beschreibung"><Input name="description" value={formData.description} onChange={handleChange} required /></FormGroup>
                 <div className="grid md:grid-cols-3 gap-4">
-                    <FormGroup label="Betrag"><Input type="number" name="amount" value={formData.amount} onChange={handleChange} required /></FormGroup>
+                    <FormGroup label="Betrag">
+                        <Input 
+                            type="number" 
+                            name="amount" 
+                            value={formData.amount || ''} 
+                            onChange={handleChange} 
+                            onKeyDown={handleKeyDown}
+                            required 
+                            min="0.01" 
+                            step="0.01" 
+                        />
+                    </FormGroup>
                     <FormGroup label="Typ"><Select name="type" value={formData.type} onChange={handleChange}><option value={TransactionType.EXPENSE}>Ausgabe</option><option value={TransactionType.INCOME}>Einnahme</option></Select></FormGroup>
                     <FormGroup label="Kategorie"><Select name="categoryId" value={formData.categoryId} onChange={handleChange}><option value="">Keine</option>{categories.filter(c => c.type === (formData.type === 'income' ? 'income' : 'expense')).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</Select></FormGroup>
                 </div>
                 <div className="grid md:grid-cols-2 gap-4">
-                     <FormGroup label="Wiederholung"><div className="flex items-center gap-2"><span>Alle</span><Input type="number" name="interval" value={formData.interval} onChange={handleChange} className="w-20" min="1" /><Select name="frequency" value={formData.frequency} onChange={handleChange}><option value={Frequency.DAILY}>Tag(e)</option><option value={Frequency.WEEKLY}>Woche(n)</option><option value={Frequency.MONTHLY}>Monat(e)</option><option value={Frequency.YEARLY}>Jahr(e)</option></Select></div></FormGroup>
+                     <FormGroup label="Wiederholung">
+                        <div className="flex items-center gap-2">
+                            <span>Alle</span>
+                            <Input type="number" name="interval" value={formData.interval || ''} onChange={handleChange} onKeyDown={handleKeyDown} className="w-20" min="1" />
+                            <Select name="frequency" value={formData.frequency} onChange={handleChange}><option value={Frequency.DAILY}>Tag(e)</option><option value={Frequency.WEEKLY}>Woche(n)</option><option value={Frequency.MONTHLY}>Monat(e)</option><option value={Frequency.YEARLY}>Jahr(e)</option></Select>
+                        </div>
+                    </FormGroup>
                      <FormGroup label="Laufzeit"><div className="flex items-center gap-2"><span>Start</span><Input type="date" name="startDate" value={formData.startDate} onChange={handleChange} required /><span>Ende</span><Input type="date" name="endDate" value={formData.endDate} onChange={handleChange} /></div></FormGroup>
                 </div>
                 <div className="flex items-center justify-between pt-2">
@@ -652,7 +1076,7 @@ const LiabilityManagerModal: React.FC = memo(() => {
 
     const initialFormData = useMemo(() => ({
         name: '', type: LiabilityType.DEBT, initialAmount: 0, interestRate: 0,
-        creditor: '', debtor: '', startDate: new Date().toISOString().split('T')[0], dueDate: ''
+        creditor: '', debtor: '', startDate: format(new Date(), 'yyyy-MM-dd'), dueDate: ''
     }), []);
 
     const [formData, setFormData] = useState<Omit<Liability, 'id' | 'paidAmount'>>(initialFormData);
@@ -676,11 +1100,23 @@ const LiabilityManagerModal: React.FC = memo(() => {
 
     const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: (name === 'initialAmount' || name === 'interestRate') ? parseFloat(value) : value }));
+        if (name === 'initialAmount' || name === 'interestRate') {
+            const floatVal = parseFloat(value);
+            if (floatVal < 0) return;
+            setFormData(prev => ({ ...prev, [name]: isNaN(floatVal) ? 0 : floatVal }));
+        } else {
+            setFormData(prev => ({ ...prev, [name]: value }));
+        }
     }, []);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        
+        if (formData.initialAmount < 0) {
+             alert("Der Betrag muss positiv sein.");
+             return;
+        }
+
         const data = { ...formData, dueDate: formData.dueDate || undefined };
         if (editingId) {
             dispatch({ type: 'UPDATE_LIABILITY', payload: { ...data, id: editingId, paidAmount: liabilities.find(l => l.id === editingId)?.paidAmount || 0 } });
@@ -690,6 +1126,10 @@ const LiabilityManagerModal: React.FC = memo(() => {
         handleCancel();
     };
     
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === '-' || e.key === 'e' || e.key === '+') e.preventDefault();
+    };
+
     return (
         <div className="space-y-6">
             {!isFormVisible && (
@@ -703,8 +1143,30 @@ const LiabilityManagerModal: React.FC = memo(() => {
                          <FormGroup label="Typ"><Select name="type" value={formData.type} onChange={handleChange}><option value={LiabilityType.DEBT}>Schuld (Ich schulde)</option><option value={LiabilityType.LOAN}>Forderung (Mir wird geschuldet)</option></Select></FormGroup>
                      </div>
                      <div className="grid md:grid-cols-2 gap-4">
-                         <FormGroup label="Betrag"><Input type="number" name="initialAmount" value={formData.initialAmount} onChange={handleChange} required min="0" step="0.01" /></FormGroup>
-                         <FormGroup label="Jährl. Zinssatz (%)"><Input type="number" name="interestRate" value={formData.interestRate} onChange={handleChange} required min="0" step="0.01" /></FormGroup>
+                         <FormGroup label="Betrag">
+                            <Input 
+                                type="number" 
+                                name="initialAmount" 
+                                value={formData.initialAmount || ''} 
+                                onChange={handleChange} 
+                                onKeyDown={handleKeyDown}
+                                required 
+                                min="0" 
+                                step="0.01" 
+                            />
+                        </FormGroup>
+                         <FormGroup label="Jährl. Zinssatz (%)">
+                            <Input 
+                                type="number" 
+                                name="interestRate" 
+                                value={formData.interestRate || ''} 
+                                onChange={handleChange} 
+                                onKeyDown={handleKeyDown}
+                                required 
+                                min="0" 
+                                step="0.01" 
+                            />
+                        </FormGroup>
                      </div>
                       <FormGroup label={formData.type === LiabilityType.DEBT ? "Kreditgeber" : "Schuldner"}>
                          <Input name={formData.type === LiabilityType.DEBT ? "creditor" : "debtor"} value={formData.type === LiabilityType.DEBT ? formData.creditor || '' : formData.debtor || ''} onChange={handleChange} />
@@ -799,8 +1261,6 @@ const DebtPaydownModal: React.FC = memo(() => {
 
     const handleCalculate = useCallback(() => {
         setIsLoading(true);
-        // Use a zero-delay timeout to allow the UI to update to the loading state
-        // before starting the potentially intensive calculation.
         setTimeout(() => {
             const result = calculateDebtPaydownPlan(liabilities, strategy, extraPayment);
             setPlan(result);
@@ -893,6 +1353,277 @@ const DebtPaydownModal: React.FC = memo(() => {
     );
 });
 
+const SyncDataModal: React.FC = memo(() => {
+    const { isSubscribed } = useAppState();
+    const dispatch = useAppDispatch();
+    const [step, setStep] = useState<'idle' | 'registering' | 'queued' | 'syncing' | 'complete' | 'error'>('idle');
+    const [progress, setProgress] = useState(0);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+    const handleSubscribe = () => {
+        dispatch({ type: 'SET_IS_SUBSCRIBED', payload: true });
+    };
+
+    useEffect(() => {
+        // Listen for messages from the Service Worker (e.g. sync start/complete/error)
+        const handleSWMessage = (event: MessageEvent) => {
+            if (event.data) {
+                if (event.data.type === 'SYNC_STARTED') {
+                    setStep('syncing');
+                    setProgress(10);
+                    // Simulate progress visually since we don't get granular progress from simulated sync
+                    const interval = setInterval(() => {
+                        setProgress(prev => Math.min(prev + 5, 90));
+                    }, 150);
+                    // Store interval ID on element or ref if needed, but for simplicity relying on effect cleanup
+                    return () => clearInterval(interval);
+                }
+                if (event.data.type === 'SYNC_COMPLETE') {
+                    setProgress(100);
+                    setTimeout(() => setStep('complete'), 500);
+                }
+                if (event.data.type === 'SYNC_ERROR') {
+                    setStep('error');
+                    setErrorMessage(event.data.message || 'Ein unbekannter Fehler ist aufgetreten.');
+                }
+            }
+        };
+
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.addEventListener('message', handleSWMessage);
+        }
+
+        return () => {
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.removeEventListener('message', handleSWMessage);
+            }
+        };
+    }, []);
+
+    const handleStartSync = async () => {
+        setStep('registering');
+        setProgress(5);
+        setErrorMessage(null);
+
+        // Check if Background Sync is supported and SW is ready
+        if ('serviceWorker' in navigator && 'SyncManager' in window) {
+            try {
+                const registration = await navigator.serviceWorker.ready;
+                // Register the background sync tag
+                await (registration as any).sync.register('sync-transactions');
+                
+                // If we are offline, the sync will be queued.
+                if (!navigator.onLine) {
+                    setStep('queued');
+                } else {
+                    // If online, it usually triggers immediately.
+                    // We set state to 'syncing' to show UI feedback immediately while waiting for SW message.
+                    setStep('syncing');
+                }
+            } catch (err: any) {
+                console.error("Background Sync registration failed:", err);
+                setStep('error');
+                setErrorMessage(err.message || "Fehler bei der Registrierung des Background Syncs.");
+            }
+        } else {
+            // Fallback for browsers without Background Sync support
+            fallbackSync();
+        }
+    };
+
+    const fallbackSync = () => {
+        setStep('syncing');
+        let currentProgress = 0;
+        const interval = setInterval(() => {
+            currentProgress += 20;
+            setProgress(currentProgress);
+            if (currentProgress >= 100) {
+                clearInterval(interval);
+                setStep('complete');
+            }
+        }, 500);
+    };
+
+    if (!isSubscribed) {
+        return (
+            <div className="space-y-6 text-center">
+                <div className="flex justify-center mb-4">
+                    <div className="p-4 bg-primary/10 rounded-full animate-pulse">
+                        <Lock size={48} className="text-primary" />
+                    </div>
+                </div>
+                <div>
+                    <h3 className="text-2xl font-bold mb-2">Premium Feature gesperrt</h3>
+                    <p className="text-muted-foreground max-w-sm mx-auto">
+                        Die dezentrale Synchronisation ist ein exklusives Feature für Klaro Pro Abonnenten. 
+                        Halten Sie Ihre Daten sicher und synchron auf allen Geräten – ganz ohne zentralen Server.
+                    </p>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 my-6 text-left">
+                    <div className="p-3 bg-secondary/50 rounded-lg flex items-start gap-3">
+                        <div className="p-2 bg-success/20 text-success rounded-md mt-0.5"><ShieldCheck size={16}/></div>
+                        <div>
+                            <p className="font-semibold text-sm">E2E Verschlüsselt</p>
+                            <p className="text-xs text-muted-foreground">Maximale Sicherheit für Ihre Finanzdaten.</p>
+                        </div>
+                    </div>
+                    <div className="p-3 bg-secondary/50 rounded-lg flex items-start gap-3">
+                        <div className="p-2 bg-blue-500/20 text-blue-500 rounded-md mt-0.5"><Database size={16}/></div>
+                        <div>
+                            <p className="font-semibold text-sm">Dezentral</p>
+                            <p className="text-xs text-muted-foreground">Kein zentraler Server, Ihre Daten gehören Ihnen.</p>
+                        </div>
+                    </div>
+                    <div className="p-3 bg-secondary/50 rounded-lg flex items-start gap-3">
+                        <div className="p-2 bg-purple-500/20 text-purple-500 rounded-md mt-0.5"><Wifi size={16}/></div>
+                        <div>
+                            <p className="font-semibold text-sm">Offline-First</p>
+                            <p className="text-xs text-muted-foreground">Syncen Sie, sobald Sie wieder online sind.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="pt-4 border-t border-border/20">
+                    <p className="text-lg font-bold mb-4">Nur 2,99 € / Monat</p>
+                    <Button onClick={handleSubscribe} variant="primary" className="w-full text-lg py-3">
+                        Jetzt upgraden & freischalten
+                    </Button>
+                    <p className="text-xs text-muted-foreground mt-2">Jederzeit kündbar. Keine versteckten Kosten.</p>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            <div className="flex flex-col items-center justify-center p-6 bg-secondary/20 rounded-xl border border-border/50 relative overflow-hidden min-h-[300px]">
+                {/* Background Decoration */}
+                <div className="absolute inset-0 opacity-10 pointer-events-none">
+                    <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,hsl(var(--primary))_0%,transparent_50%)] animate-pulse" style={{animationDuration: '4s'}}></div>
+                </div>
+
+                {step === 'idle' && (
+                    <div className="text-center z-10 space-y-6 animate-fade-in">
+                        <div className="relative inline-block">
+                            <Server size={64} className="text-muted-foreground/50" />
+                            <div className="absolute -bottom-2 -right-2 p-2 bg-card rounded-full shadow-lg border border-border">
+                                <Share2 size={24} className="text-primary" />
+                            </div>
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-bold">Bereit zum Synchronisieren</h3>
+                            <p className="text-sm text-muted-foreground mt-2 max-w-xs mx-auto">
+                                Verbinden Sie sich mit dem P2P-Netzwerk, um Ihre lokalen Daten abzugleichen.
+                            </p>
+                        </div>
+                        <Button onClick={handleStartSync} variant="primary" className="px-8">
+                            Verbindung herstellen
+                        </Button>
+                    </div>
+                )}
+
+                {(step === 'registering' || step === 'syncing') && (
+                    <div className="w-full max-w-sm z-10 space-y-4 animate-fade-in">
+                        <div className="text-center mb-4">
+                             <div className="flex items-center justify-center gap-4 text-primary mb-3">
+                                <Server size={32} />
+                                <div className="flex gap-1">
+                                    <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0s'}}></span>
+                                    <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></span>
+                                    <span className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.4s'}}></span>
+                                </div>
+                                <Smartphone size={32} />
+                            </div>
+                            <h4 className="font-semibold">{step === 'registering' ? 'Initialisiere...' : 'Synchronisiere...'}</h4>
+                        </div>
+                        <div className="flex justify-between text-sm font-medium mb-1">
+                            <span>Fortschritt</span>
+                            <span>{Math.round(progress)}%</span>
+                        </div>
+                        <div className="w-full bg-secondary h-3 rounded-full overflow-hidden">
+                            <div 
+                                className="bg-primary h-full transition-all duration-300 ease-out relative"
+                                style={{ width: `${progress}%` }}
+                            >
+                                <div className="absolute inset-0 bg-white/20 animate-[shimmer_1s_infinite] w-full h-full"></div>
+                            </div>
+                        </div>
+                        {step === 'syncing' && (
+                            <div className="text-xs font-mono text-muted-foreground text-center mt-2">
+                                Hash: 0x{Math.random().toString(16).substr(2, 8)}...
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {step === 'queued' && (
+                    <div className="text-center z-10 space-y-6 animate-fade-in">
+                        <div className="inline-flex items-center justify-center p-4 bg-warning/10 text-warning rounded-full ring-4 ring-warning/5 mb-2">
+                            <WifiOff size={48} className="animate-pulse" />
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-bold">Warte auf Netzwerk...</h3>
+                            <p className="text-sm text-muted-foreground mt-1 max-w-xs mx-auto">
+                                Die Synchronisation wurde in die Warteschlange gestellt und startet automatisch, sobald Sie wieder online sind.
+                            </p>
+                        </div>
+                        <div className="bg-secondary/50 p-3 rounded-lg text-xs font-mono text-muted-foreground flex items-center justify-center gap-2">
+                            <span className="w-2 h-2 bg-warning rounded-full animate-pulse"></span>
+                            Status: Offline
+                        </div>
+                        <Button onClick={() => dispatch({type: 'CLOSE_MODAL'})} variant="secondary">
+                            Im Hintergrund laufen lassen
+                        </Button>
+                    </div>
+                )}
+
+                {step === 'complete' && (
+                    <div className="text-center z-10 space-y-6 animate-fade-in">
+                        <div className="inline-flex items-center justify-center p-4 bg-success/10 text-success rounded-full ring-4 ring-success/5 mb-2">
+                            <CheckCircle2 size={48} />
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-bold">Synchronisation erfolgreich</h3>
+                            <p className="text-sm text-muted-foreground mt-1">
+                                Ihre Daten sind nun auf dem neuesten Stand.
+                            </p>
+                        </div>
+                        <div className="bg-secondary/50 p-3 rounded-lg text-xs font-mono text-muted-foreground">
+                            Letzter Sync: {format(new Date(), 'HH:mm:ss')} • Block #{Math.floor(Math.random() * 100000)}
+                        </div>
+                        <Button onClick={() => dispatch({type: 'CLOSE_MODAL'})} variant="secondary">
+                            Schließen
+                        </Button>
+                    </div>
+                )}
+
+                {step === 'error' && (
+                    <div className="text-center z-10 space-y-6 animate-fade-in">
+                        <div className="inline-flex items-center justify-center p-4 bg-destructive/10 text-destructive rounded-full ring-4 ring-destructive/5 mb-2">
+                            <AlertCircle size={48} className="animate-pulse" />
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-bold text-destructive">Synchronisation fehlgeschlagen</h3>
+                            <p className="text-sm text-muted-foreground mt-2 max-w-xs mx-auto bg-destructive/5 p-2 rounded border border-destructive/20">
+                                {errorMessage}
+                            </p>
+                        </div>
+                        <div className="flex flex-col gap-3 w-full max-w-xs mx-auto">
+                            <Button onClick={() => { setStep('idle'); handleStartSync(); }} variant="primary">
+                                Erneut versuchen
+                            </Button>
+                            <Button onClick={() => dispatch({type: 'CLOSE_MODAL'})} variant="secondary">
+                                Schließen
+                            </Button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+});
+
 const ExportImportModal: React.FC = memo(() => {
     const state = useAppState();
     const dispatch = useAppDispatch();
@@ -928,6 +1659,12 @@ const ExportImportModal: React.FC = memo(() => {
         }
     };
 
+    const handleClearAllData = () => {
+        if (window.confirm('WARNUNG: Möchten Sie wirklich ALLE Daten löschen? Dies entfernt alle Transaktionen, Kategorien, Ziele und Einstellungen. Dieser Vorgang kann NICHT rückgängig gemacht werden.')) {
+            dispatch({ type: 'CLEAR_ALL_DATA' });
+        }
+    };
+
     return (
         <div className="space-y-6">
             <div className="grid md:grid-cols-2 gap-6">
@@ -950,14 +1687,172 @@ const ExportImportModal: React.FC = memo(() => {
                 <h4 className="font-semibold text-destructive mb-2 flex items-center gap-2">
                     <AlertTriangle size={18}/> Gefahrzone
                 </h4>
-                <div className="p-4 bg-destructive/10 rounded-lg flex items-center justify-between gap-4">
-                    <div>
-                        <p className="font-medium text-destructive-foreground">App zurücksetzen</p>
-                        <p className="text-xs text-muted-foreground">Löscht alle Daten und stellt die Beispieldaten wieder her.</p>
+                <div className="space-y-3">
+                    <div className="p-4 bg-destructive/10 rounded-lg flex items-center justify-between gap-4">
+                        <div>
+                            <p className="font-medium text-destructive-foreground">Beispieldaten laden</p>
+                            <p className="text-xs text-muted-foreground">Setzt die App auf den Demostatus zurück.</p>
+                        </div>
+                        <Button onClick={handleResetState} variant="secondary" className="flex-shrink-0 flex items-center gap-2 border-destructive/20 hover:bg-destructive/20 text-destructive-foreground">
+                            <RefreshCw size={16} /> Reset
+                        </Button>
                     </div>
-                    <Button onClick={handleResetState} variant="destructive" className="flex-shrink-0 flex items-center gap-2">
-                        <RefreshCw size={16} /> Zurücksetzen
-                    </Button>
+                    <div className="p-4 bg-destructive/10 rounded-lg flex items-center justify-between gap-4 border border-destructive/20">
+                        <div>
+                            <p className="font-bold text-destructive">ALLE DATEN LÖSCHEN</p>
+                            <p className="text-xs text-muted-foreground">Löscht alle Eingaben komplett. Leerer Zustand.</p>
+                        </div>
+                        <Button onClick={handleClearAllData} variant="destructive" className="flex-shrink-0 flex items-center gap-2">
+                            <Trash2 size={16} /> Alles löschen
+                        </Button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+});
+
+const ConfirmBulkDeleteModal: React.FC<{ ids: string[] }> = memo(({ ids }) => {
+    const dispatch = useAppDispatch();
+
+    const handleConfirm = () => {
+        dispatch({ type: 'DELETE_TRANSACTIONS', payload: ids });
+        dispatch({ type: 'CLOSE_MODAL' });
+    };
+
+    return (
+        <div className="space-y-4">
+            <div className="flex flex-col items-center text-center p-4 bg-destructive/5 rounded-lg border border-destructive/10">
+                <div className="p-3 bg-destructive/10 rounded-full mb-3">
+                    <Trash2 className="h-8 w-8 text-destructive" />
+                </div>
+                <h4 className="text-lg font-bold text-foreground">Transaktionen löschen?</h4>
+                <p className="text-sm text-muted-foreground mt-1">
+                    Sind Sie sicher, dass Sie <span className="font-bold text-foreground">{ids.length}</span> ausgewählte Transaktionen unwiderruflich löschen möchten?
+                </p>
+            </div>
+            
+            <div className="flex justify-end gap-3 pt-2">
+                <Button onClick={() => dispatch({ type: 'CLOSE_MODAL' })}>
+                    Abbrechen
+                </Button>
+                <Button onClick={handleConfirm} variant="destructive">
+                    Ja, löschen
+                </Button>
+            </div>
+        </div>
+    );
+});
+
+const BudgetDetailsModal: React.FC = memo(() => {
+    const budgetData = useBudgetOverviewData();
+    
+    const totalBudget = useMemo(() => budgetData.reduce((acc, curr) => acc + curr.budget, 0), [budgetData]);
+    const totalSpent = useMemo(() => budgetData.reduce((acc, curr) => acc + curr.spent, 0), [budgetData]);
+    const totalRemaining = totalBudget - totalSpent;
+
+    if (budgetData.length === 0) {
+        return (
+            <div className="text-center py-12">
+                <div className="p-4 bg-secondary/50 rounded-full inline-block mb-4">
+                    <PieChartIcon size={32} className="text-muted-foreground" />
+                </div>
+                <h3 className="text-lg font-medium">Keine Budgets definiert</h3>
+                <p className="text-muted-foreground mt-2">Erstellen Sie Kategorien mit einem Budgetlimit, um hier detaillierte Analysen zu sehen.</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="p-4 rounded-xl bg-secondary/30 border border-border/50 flex flex-col">
+                    <span className="text-sm text-muted-foreground">Gesamtbudget</span>
+                    <span className="text-2xl font-bold font-mono text-primary">{formatCurrency(totalBudget)}</span>
+                </div>
+                <div className="p-4 rounded-xl bg-secondary/30 border border-border/50 flex flex-col">
+                    <span className="text-sm text-muted-foreground">Ausgegeben</span>
+                    <span className="text-2xl font-bold font-mono text-foreground">{formatCurrency(totalSpent)}</span>
+                </div>
+                <div className="p-4 rounded-xl bg-secondary/30 border border-border/50 flex flex-col">
+                    <span className="text-sm text-muted-foreground">Verbleibend</span>
+                    <span className={`text-2xl font-bold font-mono ${totalRemaining >= 0 ? 'text-success' : 'text-destructive'}`}>
+                        {formatCurrency(totalRemaining)}
+                    </span>
+                </div>
+            </div>
+
+            <div className="h-[300px] w-full bg-card/50 rounded-xl border border-border/50 p-2">
+                <h4 className="text-sm font-semibold mb-4 px-2">Budget vs. Tatsächlich</h4>
+                <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                        data={budgetData}
+                        margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                        barGap={2}
+                    >
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border)/0.3)" vertical={false} />
+                        <XAxis 
+                            dataKey="name" 
+                            fontSize={12} 
+                            tickLine={false} 
+                            axisLine={false}
+                            tick={{fill: 'hsl(var(--muted-foreground))'}}
+                        />
+                        <YAxis 
+                            fontSize={12} 
+                            tickLine={false} 
+                            axisLine={false}
+                            tickFormatter={(val) => `€${val}`}
+                            tick={{fill: 'hsl(var(--muted-foreground))'}}
+                        />
+                        <Tooltip
+                            cursor={{fill: 'hsl(var(--secondary)/0.3)'}}
+                            contentStyle={{ 
+                                backgroundColor: 'hsl(var(--popover))', 
+                                borderColor: 'hsl(var(--border))', 
+                                borderRadius: 'var(--radius)',
+                                color: 'hsl(var(--popover-foreground))'
+                            }}
+                            formatter={(value: number) => formatCurrency(value)}
+                        />
+                        <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }}/>
+                        <Bar dataKey="budget" name="Budget" fill="hsl(var(--muted-foreground)/0.3)" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                        <Bar dataKey="spent" name="Ausgaben" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                    </BarChart>
+                </ResponsiveContainer>
+            </div>
+
+            <div className="space-y-3">
+                <h4 className="text-sm font-semibold px-1">Details nach Kategorie</h4>
+                <div className="grid grid-cols-1 gap-3">
+                    {budgetData.map((item) => {
+                        const remaining = item.budget - item.spent;
+                        const isOver = remaining < 0;
+                        
+                        return (
+                            <div key={item.id} className="flex items-center justify-between p-3 rounded-lg bg-secondary/20 hover:bg-secondary/40 transition-colors border border-transparent hover:border-border/30">
+                                <div className="flex flex-col min-w-0 pr-4">
+                                    <span className="font-medium truncate">{item.name}</span>
+                                    <div className="w-full bg-secondary h-1.5 rounded-full mt-2 min-w-[100px]">
+                                        <div 
+                                            className={`h-1.5 rounded-full ${isOver ? 'bg-destructive' : 'bg-success'}`} 
+                                            style={{ width: `${Math.min(item.percentage, 100)}%` }}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="flex flex-col items-end flex-shrink-0">
+                                    <div className="text-sm font-mono">
+                                        <span className="font-bold">{formatCurrency(item.spent)}</span>
+                                        <span className="text-muted-foreground mx-1">/</span>
+                                        <span className="text-muted-foreground">{formatCurrency(item.budget)}</span>
+                                    </div>
+                                    <span className={`text-xs font-semibold ${isOver ? 'text-destructive' : 'text-success'}`}>
+                                        {isOver ? '+' : ''}{formatCurrency(Math.abs(remaining))} {isOver ? 'drüber' : 'übrig'}
+                                    </span>
+                                </div>
+                            </div>
+                        );
+                    })}
                 </div>
             </div>
         </div>
@@ -1090,351 +1985,187 @@ const MergeTransactionsModal: React.FC<{ transactionIds: string[] }> = memo(({ t
     );
 });
 
-
-const SankeyNode = memo(({ x, y, width, height, payload, containerWidth }: any) => {
-  const isOut = x + width + 6 > containerWidth;
+const SankeyNode = ({ x, y, width, height, index, payload, containerWidth }: any) => {
+  const isOut = x + width + 6 > (containerWidth || 800);
   return (
     <g>
-      <Rectangle x={x} y={y} width={width} height={height} fill="hsl(var(--primary))" fillOpacity="0.8" />
-      <text x={isOut ? x - 6 : x + width + 6} y={y + height / 2} dy="0.355em" textAnchor={isOut ? 'end' : 'start'} fill="hsl(var(--foreground))" className="font-medium">
-        {String(payload?.name ?? '')} ({formatCurrency(payload?.value || 0)})
+      <Rectangle x={x} y={y} width={width} height={height} fill="hsl(var(--primary))" fillOpacity="0.8" radius={[4, 4, 4, 4]} />
+      <text
+        textAnchor={isOut ? 'end' : 'start'}
+        x={isOut ? x - 6 : x + width + 6}
+        y={y + height / 2}
+        fontSize="12"
+        fill="hsl(var(--foreground))"
+        dy="-0.3em"
+        fontWeight="bold"
+      >
+        {payload.name}
+      </text>
+      <text
+        textAnchor={isOut ? 'end' : 'start'}
+        x={isOut ? x - 6 : x + width + 6}
+        y={y + height / 2}
+        fontSize="10"
+        fill="hsl(var(--muted-foreground))"
+        dy="0.9em"
+      >
+        {formatCurrency(payload.value)}
       </text>
     </g>
   );
+};
+
+const TaxExportModal: React.FC = memo(() => {
+    const { transactions, categories } = useAppState();
+    const [year, setYear] = useState(new Date().getFullYear());
+
+    const handleExport = () => {
+        const relevantTransactions = transactions.filter(t => t.date.startsWith(String(year)));
+        
+        if (relevantTransactions.length === 0) {
+            alert(`Keine Transaktionen für das Jahr ${year} gefunden.`);
+            return;
+        }
+
+        const categoryMap = new Map(categories.map(c => [c.id, c.name]));
+
+        const headers = ['Datum', 'Typ', 'Kategorie', 'Beschreibung', 'Betrag', 'Währung', 'Tags'];
+        const csvContent = [
+            headers.join(','),
+            ...relevantTransactions.map(t => [
+                t.date,
+                t.type,
+                `"${(t.categoryId ? categoryMap.get(t.categoryId) : '') || ''}"`,
+                `"${(t.description || '').replace(/"/g, '""')}"`,
+                t.amount.toFixed(2),
+                'EUR',
+                `"${(t.tags || []).join(' ')}"`
+            ].join(','))
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `steuer_export_${year}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    return (
+        <div className="space-y-6">
+            <div className="p-6 bg-secondary/30 rounded-xl border border-border/50">
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 bg-primary/10 rounded-lg text-primary">
+                        <FileDown size={24} />
+                    </div>
+                    <div>
+                        <h4 className="font-semibold text-lg">Steuerdaten exportieren</h4>
+                        <p className="text-sm text-muted-foreground">Laden Sie alle Transaktionen eines Jahres als CSV-Datei herunter.</p>
+                    </div>
+                </div>
+                
+                <div className="flex items-end gap-4">
+                    <div className="flex-1">
+                        <FormGroup label="Steuerjahr">
+                             <Input 
+                                type="number" 
+                                value={year} 
+                                onChange={(e) => setYear(parseInt(e.target.value))} 
+                                min="2000" 
+                                max="2100"
+                                className="font-mono text-lg"
+                            />
+                        </FormGroup>
+                    </div>
+                    <Button onClick={handleExport} variant="primary" className="mb-[2px] h-[42px] px-6">Exportieren</Button>
+                </div>
+            </div>
+        </div>
+    );
 });
 
 const AnalysisModal: React.FC = memo(() => {
     const sankeyData = useSankeyData();
+    const cashflowData = useCashflowData();
+    const [activeTab, setActiveTab] = useState<'sankey' | 'trend'>('sankey');
 
-    if (!sankeyData || sankeyData.nodes.length === 0) {
+    const hasSankeyData = sankeyData && sankeyData.nodes.length > 0;
+    const hasTrendData = cashflowData && cashflowData.some(d => d.Einnahmen > 0 || d.Ausgaben > 0);
+
+    if (!hasSankeyData && !hasTrendData) {
         return (
             <div className="text-center py-10"><p className="text-muted-foreground">Nicht genügend Daten für eine Analyse vorhanden.</p></div>
         );
     }
     
     return (
-        <div style={{ width: '100%', height: 500 }}>
-            <ResponsiveContainer>
-                <Sankey data={sankeyData} nodePadding={50} margin={{ top: 20, right: 150, bottom: 20, left: 150 }} link={{ stroke: 'hsl(var(--primary)/0.3)', strokeWidth: 15, strokeOpacity: 0.6 }} node={<SankeyNode />}>
-                   <Tooltip
-                     formatter={(value: any, name: any, props: any) => {
-                       if (props.payload.source) { // it's a link
-                          return [`${formatCurrency(value)} von ${props.payload.source.name} nach ${props.payload.target.name}`]
-                       }
-                       return null; // Don't show tooltip for nodes
-                     }}
-                     contentStyle={{ background: 'hsl(var(--card) / 0.8)', backdropFilter: 'blur(4px)', border: '1px solid hsl(var(--border) / 0.2)', borderRadius: 'var(--radius)' }}
-                    />
-                </Sankey>
-            </ResponsiveContainer>
-        </div>
-    );
-});
-
-const TaxExportModal: React.FC = memo(() => {
-    const { transactions, categories } = useAppState();
-    const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
-    const [selectedCategoryIds, setSelectedCategoryIds] = useState<Set<string>>(new Set());
-    const [isGenerating, setIsGenerating] = useState(false);
-
-    const availableYears = useMemo(() => {
-        const years = new Set<string>();
-        transactions.forEach(t => years.add(t.date.substring(0, 4)));
-        return Array.from(years).sort((a, b) => b.localeCompare(a));
-    }, [transactions]);
-
-    const expenseCategories = useMemo(() =>
-        categories.filter(c => c.type === CategoryType.EXPENSE),
-    [categories]);
-
-    useEffect(() => {
-        // Pre-select all expense categories by default
-        setSelectedCategoryIds(new Set(expenseCategories.map(c => c.id)));
-    }, [expenseCategories]);
-
-    const handleCategoryToggle = (categoryId: string) => {
-        setSelectedCategoryIds(prev => {
-            const newSet = new Set(prev);
-            if (newSet.has(categoryId)) {
-                newSet.delete(categoryId);
-            } else {
-                newSet.add(categoryId);
-            }
-            return newSet;
-        });
-    };
-
-    const handleGeneratePDF = () => {
-        setIsGenerating(true);
-        setTimeout(() => {
-            const businessTransactions = transactions.filter(t =>
-                t.date.startsWith(selectedYear) && t.tags?.includes('business')
-            );
-
-            const incomeTransactions = businessTransactions.filter(t => t.type === TransactionType.INCOME);
-            const expenseTransactions = businessTransactions.filter(t =>
-                t.type === TransactionType.EXPENSE && t.categoryId && selectedCategoryIds.has(t.categoryId)
-            );
-            
-            const categoriesMap = new Map(categories.map(c => [c.id, c.name]));
-
-            const totalIncome = incomeTransactions.reduce((sum, t) => sum + t.amount, 0);
-            const totalExpense = expenseTransactions.reduce((sum, t) => sum + t.amount, 0);
-            const result = totalIncome - totalExpense;
-
-            const { jsPDF } = jspdf;
-            const doc = new jsPDF();
-
-            doc.setFontSize(22);
-            doc.text(`Steuerübersicht ${selectedYear}`, 14, 22);
-            doc.setFontSize(11);
-            doc.setTextColor(100);
-            doc.text(`Generiert am: ${formatDate(new Date().toISOString())}`, 14, 30);
-
-            doc.setFontSize(16);
-            doc.text("Zusammenfassung", 14, 45);
-            (doc as any).autoTable({
-                startY: 50,
-                head: [['', 'Betrag']],
-                body: [
-                    ['Betriebseinnahmen', formatCurrency(totalIncome)],
-                    ['Betriebsausgaben', formatCurrency(totalExpense)],
-                    [{ content: 'Ergebnis (Gewinn / Verlust)', styles: { fontStyle: 'bold' } }, { content: formatCurrency(result), styles: { fontStyle: 'bold' } }]
-                ],
-                theme: 'striped',
-                headStyles: { fillColor: [41, 128, 185] }
-            });
-
-            let finalY = (doc as any).lastAutoTable.finalY || 10;
-
-            if (incomeTransactions.length > 0) {
-                doc.setFontSize(16);
-                doc.text("Betriebseinnahmen", 14, finalY + 15);
-                (doc as any).autoTable({
-                    startY: finalY + 20,
-                    head: [['Datum', 'Beschreibung', 'Betrag']],
-                    body: incomeTransactions.sort((a,b) => a.date.localeCompare(b.date)).map(t => [formatDate(t.date), t.description, formatCurrency(t.amount)]),
-                    theme: 'striped',
-                    headStyles: { fillColor: [39, 174, 96] }
-                });
-                finalY = (doc as any).lastAutoTable.finalY;
-            }
-
-            if (expenseTransactions.length > 0) {
-                doc.setFontSize(16);
-                doc.text("Betriebsausgaben", 14, finalY + 15);
-                (doc as any).autoTable({
-                    startY: finalY + 20,
-                    head: [['Datum', 'Beschreibung', 'Kategorie', 'Betrag']],
-                    body: expenseTransactions.sort((a,b) => a.date.localeCompare(b.date)).map(t => [formatDate(t.date), t.description, categoriesMap.get(t.categoryId!) || 'N/A', formatCurrency(t.amount)]),
-                    theme: 'striped',
-                    headStyles: { fillColor: [192, 57, 43] }
-                });
-            }
-
-            doc.save(`steuer-export-${selectedYear}.pdf`);
-            setIsGenerating(false);
-        }, 100); // Small timeout to allow UI to update
-    };
-
-    return (
-        <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormGroup label="Steuerjahr auswählen" htmlFor="tax-year">
-                    <Select id="tax-year" value={selectedYear} onChange={e => setSelectedYear(e.target.value)} disabled={availableYears.length === 0}>
-                        {availableYears.length > 0 ? (
-                            availableYears.map(year => <option key={year} value={year}>{year}</option>)
-                        ) : (
-                            <option>{new Date().getFullYear()}</option>
-                        )}
-                    </Select>
-                </FormGroup>
-                 <div className="md:pt-8">
-                     <p className="text-xs text-muted-foreground">
-                        Es werden nur Transaktionen mit dem Tag "business" berücksichtigt.
-                     </p>
-                 </div>
-            </div>
-            
-            <div>
-                <h4 className="font-semibold text-md mb-3">Auszugebende Ausgabenkategorien</h4>
-                 <div className="max-h-60 overflow-y-auto space-y-2 p-3 bg-secondary rounded-lg border border-border/20">
-                    {expenseCategories.length > 0 ? expenseCategories.map(category => (
-                         <div key={category.id} className="flex items-center">
-                            <input
-                                type="checkbox"
-                                id={`cat-${category.id}`}
-                                checked={selectedCategoryIds.has(category.id)}
-                                onChange={() => handleCategoryToggle(category.id)}
-                                className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
-                            />
-                            <label htmlFor={`cat-${category.id}`} className="ml-3 text-sm">
-                                {category.name}
-                            </label>
-                        </div>
-                    )) : (
-                        <p className="text-sm text-muted-foreground text-center py-4">Keine Ausgabenkategorien vorhanden.</p>
-                    )}
-                 </div>
-            </div>
-
-            <div className="flex justify-end pt-4">
-                 <Button
-                    onClick={handleGeneratePDF}
-                    variant="primary"
-                    disabled={isGenerating || selectedCategoryIds.size === 0 || availableYears.length === 0}
-                 >
-                    {isGenerating ? 'Generiere...' : 'PDF Export generieren'}
-                 </Button>
-            </div>
-        </div>
-    );
-});
-
-const ManageGoalsModal: React.FC = memo(() => {
-    const { goals } = useAppState();
-    const dispatch = useAppDispatch();
-    const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
-    const [formState, setFormState] = useState({ name: '', targetAmount: '' });
-
-    useEffect(() => {
-        if (editingGoal) {
-            setFormState({ name: editingGoal.name, targetAmount: String(editingGoal.targetAmount) });
-        } else {
-            setFormState({ name: '', targetAmount: '' });
-        }
-    }, [editingGoal]);
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        const targetAmount = parseFloat(formState.targetAmount);
-        if (!formState.name.trim() || isNaN(targetAmount) || targetAmount <= 0) return;
-
-        if (editingGoal) {
-            dispatch({ type: 'UPDATE_GOAL', payload: { ...editingGoal, name: formState.name.trim(), targetAmount } });
-        } else {
-            dispatch({ type: 'ADD_GOAL', payload: { name: formState.name.trim(), targetAmount, type: GoalType.GOAL } });
-        }
-        setEditingGoal(null);
-    };
-
-    const handleDelete = (id: string) => {
-        if (window.confirm("Möchten Sie dieses Ziel wirklich löschen? Zugeordnete Transaktionen werden nicht gelöscht, aber die Zuordnung wird entfernt.")) {
-            dispatch({ type: 'DELETE_GOAL', payload: id });
-        }
-    };
-    
-    return (
-        <div className="space-y-6">
-            <form onSubmit={handleSubmit} className="p-4 bg-secondary/50 rounded-lg space-y-4">
-                <h4 className="font-semibold text-lg">{editingGoal ? 'Ziel bearbeiten' : 'Neues Ziel anlegen'}</h4>
-                <div className="grid md:grid-cols-[1fr,auto] gap-4">
-                    <FormGroup label="Bezeichnung"><Input name="name" value={formState.name} onChange={e => setFormState(s => ({...s, name: e.target.value}))} required /></FormGroup>
-                    <FormGroup label="Zielbetrag (€)"><Input type="number" name="targetAmount" value={formState.targetAmount} onChange={e => setFormState(s => ({...s, targetAmount: e.target.value}))} required min="0.01" step="0.01" /></FormGroup>
-                </div>
-                <div className="flex justify-end gap-2">
-                    {editingGoal && <Button type="button" onClick={() => setEditingGoal(null)}>Abbrechen</Button>}
-                    <Button type="submit" variant="primary">{editingGoal ? 'Speichern' : 'Hinzufügen'}</Button>
-                </div>
-            </form>
-            <div className="space-y-4">
-                {goals.map(goal => {
-                    const percentage = Math.min((goal.currentAmount / goal.targetAmount) * 100, 100);
-                    return (
-                        <div key={goal.id} className="p-4 rounded-lg bg-secondary/50">
-                            <div className="flex justify-between items-start">
-                                <div>
-                                    <p className="font-semibold">{goal.name}</p>
-                                    <p className="text-sm text-muted-foreground">{formatCurrency(goal.currentAmount)} / {formatCurrency(goal.targetAmount)}</p>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                    <button onClick={() => setEditingGoal(goal)} className="p-2 text-muted-foreground hover:text-foreground"><Edit size={16} /></button>
-                                    <button onClick={() => handleDelete(goal.id)} className="p-2 text-muted-foreground hover:text-destructive"><Trash2 size={16} /></button>
-                                </div>
-                            </div>
-                            <div className="w-full bg-muted rounded-full h-2.5 mt-2">
-                                <div className="bg-primary h-2.5 rounded-full" style={{width: `${percentage}%`}}></div>
-                            </div>
-                        </div>
-                    )
-                })}
-            </div>
-        </div>
-    );
-});
-
-const ManageProjectsModal: React.FC = memo(() => {
-    const { projects } = useAppState();
-    const projectReportData = useProjectReportData();
-    const dispatch = useAppDispatch();
-    const [editingProject, setEditingProject] = useState<Project | null>(null);
-    const [formState, setFormState] = useState({ name: '', tag: '' });
-    
-    const profitMap = useMemo(() => new Map(projectReportData.map(p => [p.tag, p.profit])), [projectReportData]);
-
-    useEffect(() => {
-        if (editingProject) {
-            setFormState({ name: editingProject.name, tag: editingProject.tag });
-        } else {
-            setFormState({ name: '', tag: '' });
-        }
-    }, [editingProject]);
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!formState.name.trim() || !formState.tag.trim()) return;
-
-        const formattedTag = formState.tag.trim().toLowerCase().replace(/\s+/g, '-');
-        
-        if (editingProject) {
-            dispatch({ type: 'UPDATE_PROJECT', payload: { ...editingProject, name: formState.name.trim(), tag: formattedTag } });
-        } else {
-            dispatch({ type: 'ADD_PROJECT', payload: { name: formState.name.trim(), tag: formattedTag } });
-        }
-        setEditingProject(null);
-    };
-
-    const handleDelete = (id: string) => {
-        if (window.confirm("Möchten Sie dieses Projekt wirklich löschen? Zugeordnete Transaktionen bleiben erhalten, aber die Projektverbindung geht verloren.")) {
-            dispatch({ type: 'DELETE_PROJECT', payload: id });
-        }
-    };
-    
-    return (
-        <div className="space-y-6">
-            <form onSubmit={handleSubmit} className="p-4 bg-secondary/50 rounded-lg space-y-4">
-                <h4 className="font-semibold text-lg">{editingProject ? 'Projekt bearbeiten' : 'Neues Projekt anlegen'}</h4>
-                <div className="grid md:grid-cols-2 gap-4">
-                    <FormGroup label="Projektname"><Input name="name" value={formState.name} onChange={e => setFormState(s => ({...s, name: e.target.value}))} required /></FormGroup>
-                    <FormGroup label="Tag (für Transaktionen)"><Input name="tag" value={formState.tag} onChange={e => setFormState(s => ({...s, tag: e.target.value}))} required /></FormGroup>
-                </div>
-                <div className="flex justify-end gap-2">
-                    {editingProject && <Button type="button" onClick={() => setEditingProject(null)}>Abbrechen</Button>}
-                    <Button type="submit" variant="primary">{editingProject ? 'Speichern' : 'Hinzufügen'}</Button>
-                </div>
-            </form>
-            <div className="space-y-3">
-                {projects.map(project => (
-                    <div key={project.id} className="p-4 rounded-lg bg-secondary/50 flex justify-between items-center">
-                        <div>
-                            <p className="font-semibold">{project.name}</p>
-                            <p className="text-sm text-muted-foreground">Gewinn (akt. Zeitraum): <span className={`font-bold ${profitMap.get(project.tag) ?? 0 >= 0 ? 'text-success' : 'text-destructive'}`}>{formatCurrency(profitMap.get(project.tag) ?? 0)}</span></p>
-                        </div>
-                        <div className="flex items-center gap-1">
-                            <button onClick={() => setEditingProject(project)} className="p-2 text-muted-foreground hover:text-foreground"><Edit size={16} /></button>
-                            <button onClick={() => handleDelete(project.id)} className="p-2 text-muted-foreground hover:text-destructive"><Trash2 size={16} /></button>
-                        </div>
+        <div className="space-y-4">
+            <div className="flex bg-secondary p-1 rounded-lg w-full sm:w-auto self-start">
+                <button
+                    onClick={() => setActiveTab('sankey')}
+                    className={`flex-1 sm:flex-none px-4 py-2 text-sm font-medium rounded-md transition-all ${activeTab === 'sankey' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                    <div className="flex items-center gap-2">
+                        <Activity size={16} />
+                        <span>Geldfluss</span>
                     </div>
-                ))}
+                </button>
+                <button
+                    onClick={() => setActiveTab('trend')}
+                    className={`flex-1 sm:flex-none px-4 py-2 text-sm font-medium rounded-md transition-all ${activeTab === 'trend' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                    <div className="flex items-center gap-2">
+                        <BarChart3 size={16} />
+                        <span>Trend</span>
+                    </div>
+                </button>
+            </div>
+
+            <div style={{ width: '100%', height: 500 }} className="bg-secondary/10 rounded-xl border border-border/20 p-2">
+                <ResponsiveContainer>
+                    {activeTab === 'sankey' ? (
+                        hasSankeyData ? (
+                            <Sankey data={sankeyData} nodePadding={50} margin={{ top: 20, right: 150, bottom: 20, left: 150 }} link={{ stroke: 'hsl(var(--primary)/0.3)', strokeWidth: 15, strokeOpacity: 0.6 }} node={<SankeyNode />}>
+                               <Tooltip
+                                 formatter={(value: any, name: any, props: any) => {
+                                   if (props.payload.source) { // it's a link
+                                      return [`${formatCurrency(value)}`, `${props.payload.source.name} → ${props.payload.target.name}`]
+                                   }
+                                   return null;
+                                 }}
+                                 contentStyle={{ background: 'hsl(var(--card) / 0.9)', backdropFilter: 'blur(8px)', border: '1px solid hsl(var(--border) / 0.5)', borderRadius: 'var(--radius)', padding: '8px 12px' }}
+                                />
+                            </Sankey>
+                        ) : <div className="h-full flex items-center justify-center text-muted-foreground">Keine Daten für Flussdiagramm</div>
+                    ) : (
+                        hasTrendData ? (
+                            <BarChart data={cashflowData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.3)" vertical={false} />
+                                <XAxis dataKey="month" fontSize={12} tickLine={false} axisLine={false} />
+                                <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `€${Number(value)}`} />
+                                <Tooltip
+                                    cursor={{fill: 'hsl(var(--secondary)/0.5)'}}
+                                    contentStyle={{ background: 'hsl(var(--card) / 0.9)', backdropFilter: 'blur(8px)', border: '1px solid hsl(var(--border) / 0.5)', borderRadius: 'var(--radius)' }}
+                                    formatter={(value: number) => formatCurrency(value)}
+                                />
+                                <Legend />
+                                <Bar dataKey="Einnahmen" fill="hsl(var(--success))" radius={[4, 4, 0, 0]} maxBarSize={50} />
+                                <Bar dataKey="Ausgaben" fill="hsl(var(--destructive))" radius={[4, 4, 0, 0]} maxBarSize={50} />
+                            </BarChart>
+                        ) : <div className="h-full flex items-center justify-center text-muted-foreground">Keine Daten für Trendanalyse</div>
+                    )}
+                </ResponsiveContainer>
             </div>
         </div>
     );
 });
-
 
 const MODAL_COMPONENTS: { [key in ModalType['type']]: { component: React.FC<any>, title: string, size?: 'sm' | 'md' | 'lg' | 'xl' } } = {
     ADD_TRANSACTION: { component: TransactionModal, title: 'Neue Transaktion' },
     EDIT_TRANSACTION: { component: TransactionModal, title: 'Transaktion bearbeiten' },
+    VIEW_TRANSACTION: { component: TransactionDetailModal, title: 'Transaktionsdetails' },
     SMART_SCAN: { component: SmartScanModal, title: 'Smart Scan: Beleg erfassen', size: 'lg' },
     MONTHLY_CHECK: { component: () => <div>Monatsabschluss (in Kürze)</div>, title: 'Monatsabschluss' },
     MANAGE_CATEGORIES: { component: CategoryManagerModal, title: 'Kategorien verwalten', size: 'lg' },
@@ -1446,8 +2177,10 @@ const MODAL_COMPONENTS: { [key in ModalType['type']]: { component: React.FC<any>
     EXPORT_IMPORT_DATA: { component: ExportImportModal, title: 'Daten Export / Import' },
     TAX_EXPORT: { component: TaxExportModal, title: 'Steuer-Export', size: 'lg' },
     SUBSCRIPTION: { component: () => <div>Abonnement (in Kürze)</div>, title: 'Abonnement' },
-    SYNC_DATA: { component: () => <div>Datensynchronisation (in Kürze)</div>, title: 'Datensynchronisation' },
+    SYNC_DATA: { component: SyncDataModal, title: 'Dezentrale Synchronisation' },
     MERGE_TRANSACTIONS: { component: MergeTransactionsModal, title: 'Transaktionen zusammenführen' },
+    CONFIRM_BULK_DELETE: { component: ConfirmBulkDeleteModal, title: 'Löschen bestätigen' },
+    BUDGET_DETAILS: { component: BudgetDetailsModal, title: 'Detaillierte Budgetanalyse', size: 'xl' },
     USER_PROFILE: { component: UserProfileModal, title: 'Benutzerprofil', size: 'lg' },
     ANALYSIS: { component: AnalysisModal, title: 'Cashflow Analyse', size: 'xl' },
 };

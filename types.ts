@@ -124,9 +124,10 @@ export interface Filters {
     };
     searchTerm: string;
     transactionType: TransactionType | 'all';
+    categoryId: string | 'all';
     amountRange: {
-        min: number | '';
-        max: number | '';
+        min: string;
+        max: string;
     };
     tags: string[];
     liabilityId: string | 'all';
@@ -166,7 +167,8 @@ export interface ReportsData {
 
 export type ModalType =
   | { type: 'ADD_TRANSACTION' }
-  | { type: 'EDIT_TRANSACTION'; data: Transaction }
+  | { type: 'EDIT_TRANSACTION'; data: { transaction: Transaction } }
+  | { type: 'VIEW_TRANSACTION'; data: { transaction: Transaction } }
   | { type: 'SMART_SCAN' }
   | { type: 'MONTHLY_CHECK' }
   | { type: 'MANAGE_CATEGORIES' }
@@ -180,6 +182,8 @@ export type ModalType =
   | { type: 'SUBSCRIPTION' }
   | { type: 'SYNC_DATA' }
   | { type: 'MERGE_TRANSACTIONS'; data: { transactionIds: string[] } }
+  | { type: 'CONFIRM_BULK_DELETE'; data: { ids: string[] } }
+  | { type: 'BUDGET_DETAILS' }
   | { type: 'USER_PROFILE' }
   | { type: 'ANALYSIS' };
 
@@ -198,6 +202,7 @@ export interface AppState {
     isSubscribed: boolean;
     activeModal: ModalType | null;
     selectedTransactions: Set<string>;
+    debugMode: boolean;
 }
 
 export type Action =
@@ -233,4 +238,6 @@ export type Action =
     | { type: 'CLOSE_MODAL' }
     // FIX: Changed React.SetStateAction to SetStateAction to align with the new import.
     | { type: 'SET_SELECTED_TRANSACTIONS'; payload: SetStateAction<Set<string>> }
-    | { type: 'RESET_STATE' };
+    | { type: 'RESET_STATE' }
+    | { type: 'CLEAR_ALL_DATA' }
+    | { type: 'TOGGLE_DEBUG_MODE' };
