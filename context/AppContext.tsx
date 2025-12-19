@@ -72,6 +72,12 @@ const sampleData = {
 };
 
 const initialState: AppState = {
+    userProfile: {
+        name: 'Benutzer',
+        email: '',
+        currency: 'EUR',
+        language: 'de'
+    },
     transactions: sampleData.transactions,
     categories: sampleData.categories,
     goals: sampleData.goals,
@@ -132,6 +138,8 @@ const appReducer = (state: AppState, action: Action): AppState => {
             return { ...state, filters: { ...state.filters, ...action.payload } };
         case 'SET_IS_SUBSCRIBED':
             return { ...state, isSubscribed: action.payload };
+        case 'UPDATE_USER_PROFILE':
+            return { ...state, userProfile: { ...state.userProfile, ...action.payload } };
         case 'OPEN_MODAL':
             return { ...state, activeModal: action.payload };
         case 'CLOSE_MODAL':
@@ -282,6 +290,8 @@ const appReducer = (state: AppState, action: Action): AppState => {
             return { 
                 ...state, 
                 ...importedState,
+                // Ensure userProfile exists if importing old data
+                userProfile: importedState.userProfile || state.userProfile,
                 goals,
                 liabilities,
                 activeModal: null
@@ -307,7 +317,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const initialStateWithRecalculations = useMemo(() => {
         const goals = recalculateGoalAmounts(storedState.transactions, storedState.goals);
         const liabilities = recalculateLiabilityAmounts(storedState.transactions, storedState.liabilities);
-        return { ...storedState, goals, liabilities };
+        // Fallback for userProfile if loading from older local storage
+        const userProfile = storedState.userProfile || initialState.userProfile;
+        
+        return { ...storedState, goals, liabilities, userProfile };
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
 
@@ -416,7 +429,9 @@ export const useFilteredTransactions = (): Transaction[] => {
             if(filters.liabilityId !== 'all' && t.liabilityId !== filters.liabilityId) return false;
 
             return true;
-        }).sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime());
+        // Optimization: Use string comparison for ISO dates (YYYY-MM-DD) instead of parsing to Date objects.
+        // This is significantly faster for large datasets.
+        }).sort((a, b) => b.date.localeCompare(a.date));
     }, [transactions, filters, viewMode]);
 };
 

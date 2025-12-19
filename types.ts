@@ -1,3 +1,4 @@
+
 import type { SetStateAction } from 'react';
 
 export enum TransactionType {
@@ -91,6 +92,13 @@ export interface Project {
   tag: string;
 }
 
+export interface UserProfile {
+    name: string;
+    email: string;
+    currency: string;
+    language: string;
+}
+
 export interface DashboardStats {
     income: number;
     expense: number;
@@ -172,10 +180,12 @@ export type ModalType =
   | { type: 'SUBSCRIPTION' }
   | { type: 'SYNC_DATA' }
   | { type: 'MERGE_TRANSACTIONS'; data: { transactionIds: string[] } }
+  | { type: 'USER_PROFILE' }
   | { type: 'ANALYSIS' };
 
 // FIX: Define AppState interface here so it can be used in the Action type.
 export interface AppState {
+    userProfile: UserProfile;
     transactions: Transaction[];
     categories: Category[];
     goals: Goal[];
@@ -195,6 +205,7 @@ export type Action =
     | { type: 'SET_VIEW_MODE'; payload: ViewMode }
     | { type: 'UPDATE_FILTERS'; payload: Partial<Filters> }
     | { type: 'SET_IS_SUBSCRIBED'; payload: boolean }
+    | { type: 'UPDATE_USER_PROFILE'; payload: Partial<UserProfile> }
     | { type: 'ADD_TRANSACTION'; payload: Omit<Transaction, 'id'> }
     | { type: 'UPDATE_TRANSACTION'; payload: Transaction }
     | { type: 'DELETE_TRANSACTIONS'; payload: string[] }

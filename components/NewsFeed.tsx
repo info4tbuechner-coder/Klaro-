@@ -40,15 +40,16 @@ const NewsFeed: React.FC = () => {
 
                 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
                 
-                // Hinweis: responseMimeType: "application/json" wird bei Verwendung von tools: [{googleSearch: {}}] 
-                // von der API derzeit nicht unterstützt (Fehler 400).
-                // Wir bitten das Modell daher per Prompt um eine einfache Liste und parsen den Text.
+                // FIX: Die Gemini API unterstützt aktuell KEIN JSON-Schema (responseMimeType: "application/json")
+                // zusammen mit dem 'googleSearch' Tool. Dies führt zu einem 400 Invalid Argument Error.
+                // Lösung: Wir fordern das Modell auf, eine einfache Liste zurückzugeben und parsen den Text manuell.
 
                 const response = await ai.models.generateContent({
                    model: "gemini-2.5-flash",
                    contents: "Finde 5 aktuelle und wichtige Schlagzeilen zum Thema persönliche Finanzen, Sparen, Inflation oder Investieren in Deutschland. Gib bitte NUR die Schlagzeilen zurück, eine pro Zeile, ohne Nummerierung, ohne Einleitungssatz und ohne Markdown-Formatierung.",
                    config: {
                      tools: [{googleSearch: {}}],
+                     // responseMimeType entfernt, da inkompatibel mit googleSearch
                    },
                 });
 
@@ -78,7 +79,6 @@ const NewsFeed: React.FC = () => {
             } catch (err) {
                 if (isMounted) {
                     console.error("Fehler beim Abrufen der Finanznachrichten:", err);
-                    // Detaillierterer Fehler für Debugging, generische Nachricht für User
                     setError("Die Finanznachrichten konnten nicht geladen werden. Bitte versuchen Sie es später erneut.");
                 }
             } finally {

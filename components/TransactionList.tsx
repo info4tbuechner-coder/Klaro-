@@ -433,8 +433,9 @@ const TransactionList: React.FC = () => {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        
         // FIX: Revoke object URL to prevent memory leaks
-        URL.revokeObjectURL(url);
+        setTimeout(() => URL.revokeObjectURL(url), 100);
     }, [filteredTransactions, categoriesMap]);
     
     const groupedTransactions = useMemo(() => {

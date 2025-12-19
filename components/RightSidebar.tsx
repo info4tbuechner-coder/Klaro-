@@ -58,7 +58,7 @@ const MonthlyReport = memo(() => {
 
     return (
         <div className="space-y-6">
-            <div>
+            <div id="chart-pie-container">
                 <h4 className="font-semibold mb-2">Ausgaben nach Kategorie</h4>
                 {dataWithPercent.length > 0 ? (
                     <div style={{ width: '100%', height: 200 }}>
@@ -91,7 +91,7 @@ const CashflowAnalysis = memo(() => {
     }
 
     return (
-        <div>
+        <div id="chart-cashflow-container">
             <h4 className="font-semibold mb-4">Cashflow der letzten 12 Monate</h4>
              <div style={{ width: '100%', height: 250 }}>
                 <ResponsiveContainer>
@@ -114,7 +114,7 @@ const ProjectTracker = memo(() => {
     const projectReportData = useProjectReportData();
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6" id="chart-project-container">
             {projectReportData.length > 0 ? projectReportData.map(p => (
                 <div key={p.name}>
                     <div className="flex justify-between items-baseline mb-2">
@@ -261,7 +261,7 @@ const TABS = [
 const RightSidebar: React.FC = () => {
     const { viewMode } = useAppState();
     const [activeTab, setActiveTab] = useState('Bericht');
-    const exportRef = useRef<HTMLDivElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (viewMode === 'business' && !['Projekte', 'Cashflow'].includes(activeTab)) {
@@ -275,8 +275,16 @@ const RightSidebar: React.FC = () => {
     const isExportable = useMemo(() => ['Bericht', 'Projekte', 'Cashflow'].includes(activeTab), [activeTab]);
 
     const handleExport = useCallback(() => {
-        if (exportRef.current) {
-            const svgElement = exportRef.current.querySelector('svg');
+        if (containerRef.current) {
+            // Find specific chart containers based on active tab to avoid grabbing icons
+            const containerId = 
+                activeTab === 'Bericht' ? '#chart-pie-container' :
+                activeTab === 'Cashflow' ? '#chart-cashflow-container' :
+                activeTab === 'Projekte' ? '#chart-project-container' : null;
+
+            const targetContainer = containerId ? containerRef.current.querySelector(containerId) : containerRef.current;
+            const svgElement = targetContainer?.querySelector('.recharts-surface');
+
             if (svgElement) {
                 const svgString = new XMLSerializer().serializeToString(svgElement);
                 const blob = new Blob([svgString], { type: 'image/svg+xml' });
@@ -288,6 +296,8 @@ const RightSidebar: React.FC = () => {
                 link.click();
                 document.body.removeChild(link);
                 URL.revokeObjectURL(url);
+            } else {
+                alert("Kein Diagramm zum Exportieren gefunden.");
             }
         }
     }, [activeTab]);
@@ -322,7 +332,7 @@ const RightSidebar: React.FC = () => {
                         <FileDown className="h-5 w-5" />
                     </button>
                 </div>
-                <div ref={exportRef} className="p-2">
+                <div ref={containerRef} className="p-2">
                     <ActiveComponent />
                 </div>
             </div>

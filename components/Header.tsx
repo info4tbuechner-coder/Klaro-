@@ -1,6 +1,7 @@
+
 import React, { useState, memo } from 'react';
 import { useAppState, useAppDispatch } from '../context/AppContext';
-import { Sun, Moon, BarChart2, Settings, Menu, X, Bot, Palette, FileDown, UploadCloud, Repeat, Gem } from 'lucide-react';
+import { Sun, Moon, BarChart2, Settings, Menu, X, Bot, Palette, FileDown, UploadCloud, Repeat, Gem, User } from 'lucide-react';
 import type { Theme, ViewMode, ModalType } from '../types';
 
 const THEMES: { name: Theme; icon: React.ReactNode }[] = [
@@ -31,10 +32,11 @@ interface NavItemsProps {
     theme: Theme;
     setTheme: (theme: Theme) => void;
     isBlockchainTheme: boolean;
+    userInitials: string;
 }
 
 // FIX: Destructured isBlockchainTheme from props
-const NavItems = memo(({ isMobile = false, openModal, isDropdownOpen, setIsDropdownOpen, theme, setTheme, isBlockchainTheme }: NavItemsProps) => (
+const NavItems = memo(({ isMobile = false, openModal, isDropdownOpen, setIsDropdownOpen, theme, setTheme, isBlockchainTheme, userInitials }: NavItemsProps) => (
     <div className={`flex items-center ${isMobile ? 'flex-col space-y-4' : 'space-x-4'}`}>
         <button onClick={() => openModal({type: 'ANALYSIS'})} className={`${baseButtonClass} ${inactiveButtonClass} flex items-center`}>
             <BarChart2 className="mr-2 h-4 w-4" /> Analyse
@@ -48,16 +50,15 @@ const NavItems = memo(({ isMobile = false, openModal, isDropdownOpen, setIsDropd
             </button>
             {isDropdownOpen && (
                 <div className={`absolute ${isMobile ? 'static' : 'right-0 mt-2'} w-48 rounded-md shadow-lg py-1 glass-card ring-1 ring-black ring-opacity-5 z-20 animate-fade-in`}>
-                    <a href="#" onClick={(e) => { e.preventDefault(); openModal({type: 'MANAGE_CATEGORIES'}); setIsDropdownOpen(false); }} className="block px-4 py-2 text-sm text-foreground hover:bg-secondary">Kategorien</a>
-                    <a href="#" onClick={(e) => { e.preventDefault(); openModal({type: 'MANAGE_GOALS'}); setIsDropdownOpen(false);}} className="block px-4 py-2 text-sm text-foreground hover:bg-secondary">Ziele</a>
-                    <a href="#" onClick={(e) => { e.preventDefault(); openModal({type: 'MANAGE_PROJECTS'}); setIsDropdownOpen(false);}} className="block px-4 py-2 text-sm text-foreground hover:bg-secondary">Projekte</a>
-                    <a href="#" onClick={(e) => { e.preventDefault(); openModal({type: 'MANAGE_RECURRING'}); setIsDropdownOpen(false);}} className="block px-4 py-2 text-sm text-foreground hover:bg-secondary">Daueraufträge</a>
-                    <a href="#" onClick={(e) => { e.preventDefault(); openModal({type: 'MANAGE_LIABILITIES'}); setIsDropdownOpen(false);}} className="block px-4 py-2 text-sm text-foreground hover:bg-secondary">Schulden</a>
+                    <button onClick={() => { openModal({type: 'MANAGE_CATEGORIES'}); setIsDropdownOpen(false); }} className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-secondary">Kategorien</button>
+                    <button onClick={() => { openModal({type: 'MANAGE_GOALS'}); setIsDropdownOpen(false);}} className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-secondary">Ziele</button>
+                    <button onClick={() => { openModal({type: 'MANAGE_PROJECTS'}); setIsDropdownOpen(false);}} className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-secondary">Projekte</button>
+                    <button onClick={() => { openModal({type: 'MANAGE_RECURRING'}); setIsDropdownOpen(false);}} className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-secondary">Daueraufträge</button>
+                    <button onClick={() => { openModal({type: 'MANAGE_LIABILITIES'}); setIsDropdownOpen(false);}} className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-secondary">Schulden</button>
                     <div className="border-t border-border my-1"></div>
-                    <a href="#" onClick={(e) => { e.preventDefault(); openModal({type: 'EXPORT_IMPORT_DATA'}); setIsDropdownOpen(false);}} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-secondary"><UploadCloud className="mr-2 h-4 w-4" /> Export / Import</a>
-                    <a href="#" onClick={(e) => { e.preventDefault(); openModal({type: 'TAX_EXPORT'}); setIsDropdownOpen(false);}} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-secondary"><FileDown className="mr-2 h-4 w-4" /> Steuer-Export</a>
+                    <button onClick={() => { openModal({type: 'TAX_EXPORT'}); setIsDropdownOpen(false);}} className="w-full text-left flex items-center px-4 py-2 text-sm text-foreground hover:bg-secondary"><FileDown className="mr-2 h-4 w-4" /> Steuer-Export</button>
                     <div className="border-t border-border my-1"></div>
-                     <a href="#" onClick={(e) => { e.preventDefault(); openModal({type: 'SYNC_DATA'}); setIsDropdownOpen(false);}} className="flex items-center px-4 py-2 text-sm text-foreground hover:bg-secondary"><Repeat className="mr-2 h-4 w-4" /> Sync (Pro)</a>
+                     <button onClick={() => { openModal({type: 'SYNC_DATA'}); setIsDropdownOpen(false);}} className="w-full text-left flex items-center px-4 py-2 text-sm text-foreground hover:bg-secondary"><Repeat className="mr-2 h-4 w-4" /> Sync (Pro)</button>
                 </div>
             )}
         </div>
@@ -73,12 +74,20 @@ const NavItems = memo(({ isMobile = false, openModal, isDropdownOpen, setIsDropd
                 </button>
             ))}
         </div>
+        <button
+            onClick={() => openModal({ type: 'USER_PROFILE' })}
+            className="flex items-center justify-center w-9 h-9 rounded-full bg-primary/20 text-primary hover:bg-primary hover:text-primary-foreground transition-colors ring-2 ring-transparent hover:ring-primary/20"
+            aria-label="Benutzerprofil"
+            title="Benutzerprofil bearbeiten"
+        >
+            <span className="font-bold text-sm">{userInitials}</span>
+        </button>
     </div>
 ));
 
 
 const Header: React.FC = () => {
-    const { theme, viewMode } = useAppState();
+    const { theme, viewMode, userProfile } = useAppState();
     const dispatch = useAppDispatch();
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -89,7 +98,11 @@ const Header: React.FC = () => {
     const setViewMode = (newMode: ViewMode) => dispatch({ type: 'SET_VIEW_MODE', payload: newMode });
     const openModal = (modal: ModalType) => dispatch({ type: 'OPEN_MODAL', payload: modal });
 
-    const navItemsProps = { openModal, isDropdownOpen, setIsDropdownOpen, theme, setTheme, isBlockchainTheme };
+    const userInitials = userProfile?.name 
+        ? userProfile.name.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase() 
+        : 'U';
+
+    const navItemsProps = { openModal, isDropdownOpen, setIsDropdownOpen, theme, setTheme, isBlockchainTheme, userInitials };
 
     return (
         <header className="sticky top-0 z-40 w-full glass-card">

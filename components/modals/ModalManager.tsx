@@ -3,7 +3,7 @@ import React, { useState, useCallback, useRef, useEffect, memo, useMemo } from '
 import { useAppState, useAppDispatch, useSankeyData, useProjectReportData } from '../../context/AppContext';
 import { Transaction, Category, Goal, Project, RecurringTransaction, TransactionType, CategoryType, GoalType, Frequency, ModalType, LiabilityType, Liability } from '../../types';
 import { GoogleGenAI, Type } from "@google/genai";
-import { X, Camera, Sparkles, Trash2, FileDown, UploadCloud, Edit, FileText, ArrowDownCircle, ArrowUpCircle, Calendar, GripVertical, CalendarCheck, TrendingUp, PiggyBank, BarChart3, Zap, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { X, Camera, Sparkles, Trash2, FileDown, UploadCloud, Edit, FileText, ArrowDownCircle, ArrowUpCircle, Calendar, GripVertical, CalendarCheck, TrendingUp, PiggyBank, BarChart3, Zap, ShieldCheck, AlertTriangle, User, RefreshCw } from 'lucide-react';
 import { Sankey, Tooltip, ResponsiveContainer, Rectangle, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from 'recharts';
 import { formatCurrency, formatDate, calculateDebtPaydownPlan, PaydownPlan } from '../../utils';
 import { Modal, FormGroup, Input, Select, Button } from '../ui';
@@ -110,15 +110,23 @@ const SmartScanModal: React.FC = memo(() => {
     const [isLoading, setIsLoading] = useState(false); // For AI scan
     const [isCameraStarting, setIsCameraStarting] = useState(true);
     const [error, setError] = useState<{ type: string; message: string } | null>(null);
+    // New state to hold captured image to display while loading
+    const [capturedImage, setCapturedImage] = useState<string | null>(null);
 
-    const startCamera = useCallback(async () => {
+    const stopCamera = useCallback(() => {
         if (streamRef.current) {
             streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
         }
+        setStream(null);
+    }, []);
+
+    const startCamera = useCallback(async () => {
+        stopCamera(); // Ensure previous stream is closed
         
         setIsCameraStarting(true);
         setError(null);
-        setStream(null);
+        setCapturedImage(null);
 
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
             setError({ type: "UnsupportedError", message: "Ihr Browser unterstützt den Kamerazugriff nicht." });
@@ -169,16 +177,14 @@ const SmartScanModal: React.FC = memo(() => {
         } finally {
             setIsCameraStarting(false);
         }
-    }, []);
+    }, [stopCamera]);
 
     useEffect(() => {
         startCamera();
         return () => {
-            if (streamRef.current) {
-                streamRef.current.getTracks().forEach(track => track.stop());
-            }
+            stopCamera();
         };
-    }, [startCamera]);
+    }, [startCamera, stopCamera]);
 
     const handleScan = useCallback(async () => {
         if (!navigator.onLine) {
@@ -204,7 +210,12 @@ const SmartScanModal: React.FC = memo(() => {
         }
         ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
         
-        const base64Data = canvas.toDataURL('image/jpeg').split(',')[1];
+        // Capture image and stop camera immediately for better UX
+        const base64FullData = canvas.toDataURL('image/jpeg', 0.8);
+        setCapturedImage(base64FullData);
+        stopCamera();
+
+        const base64Data = base64FullData.split(',')[1];
 
         try {
             if (!process.env.API_KEY) throw new Error("API_KEY ist nicht konfiguriert.");
@@ -249,10 +260,11 @@ const SmartScanModal: React.FC = memo(() => {
         } catch (e) {
             console.error("Smart Scan Error:", e);
             setError({ type: 'ScanError', message: 'Analyse fehlgeschlagen. Der Beleg konnte nicht gelesen werden. Bitte versuchen Sie es erneut oder geben Sie die Daten manuell ein.' });
+            // If failed, we might want to restart camera or let user retry
         } finally {
             setIsLoading(false);
         }
-    }, [dispatch]);
+    }, [dispatch, stopCamera]);
 
     return (
         <div>
@@ -282,8 +294,13 @@ const SmartScanModal: React.FC = memo(() => {
                 )
             )}
             <div className="relative w-full aspect-video bg-secondary rounded-lg overflow-hidden border-2 border-dashed border-border">
-                <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-                {isCameraStarting && (
+                {capturedImage ? (
+                    <img src={capturedImage} alt="Captured" className="w-full h-full object-cover" />
+                ) : (
+                    <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                )}
+                
+                {isCameraStarting && !capturedImage && (
                     <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-primary-foreground animate-fade-in">
                         <Camera className="h-10 w-10 animate-pulse mb-4" />
                         <span className="text-lg font-semibold">Kamera wird gestartet...</span>
@@ -304,15 +321,25 @@ const SmartScanModal: React.FC = memo(() => {
                 )}
             </div>
             <div className="mt-6 flex justify-center">
-                <Button 
-                    onClick={handleScan} 
-                    disabled={isLoading || !!error || !stream || isCameraStarting} 
-                    variant="primary" 
-                    className="px-8 py-4 rounded-full flex items-center space-x-3 text-lg font-bold transform hover:scale-105"
-                    aria-label="Beleg scannen"
-                >
-                    <Camera size={24} /> <span>Jetzt Scannen</span>
-                </Button>
+                {capturedImage && error ? (
+                     <Button 
+                        onClick={startCamera} 
+                        variant="primary" 
+                        className="px-8 py-4 rounded-full flex items-center space-x-3 text-lg font-bold"
+                    >
+                        <span>Erneut scannen</span>
+                    </Button>
+                ) : (
+                    <Button 
+                        onClick={handleScan} 
+                        disabled={isLoading || !!error || !stream || isCameraStarting} 
+                        variant="primary" 
+                        className="px-8 py-4 rounded-full flex items-center space-x-3 text-lg font-bold transform hover:scale-105"
+                        aria-label="Beleg scannen"
+                    >
+                        <Camera size={24} /> <span>Jetzt Scannen</span>
+                    </Button>
+                )}
             </div>
         </div>
     );
@@ -895,18 +922,122 @@ const ExportImportModal: React.FC = memo(() => {
         reader.readAsText(file);
     };
 
+    const handleResetState = () => {
+        if (window.confirm('Sind Sie sicher, dass Sie den Zustand auf die ursprünglichen Beispieldaten zurücksetzen möchten? Alle Ihre Daten gehen verloren.')) {
+            dispatch({ type: 'RESET_STATE' });
+        }
+    };
+
     return (
-        <div className="space-y-6 text-center">
-            <div>
-                <h4 className="font-semibold text-lg">Daten exportieren</h4>
-                <p className="text-muted-foreground text-sm mt-1">Sichern Sie alle Ihre Daten in einer JSON-Datei.</p>
-                <Button onClick={handleExport} variant="primary" className="mt-4 flex items-center gap-2 mx-auto"><FileDown size={18} /> Backup herunterladen</Button>
+        <div className="space-y-6">
+            <div className="grid md:grid-cols-2 gap-6">
+                <div className="p-4 bg-secondary/30 rounded-lg border border-border/50 flex flex-col items-center text-center">
+                    <FileDown className="h-8 w-8 text-primary mb-3" />
+                    <h4 className="font-semibold">Backup erstellen</h4>
+                    <p className="text-muted-foreground text-sm mt-1 mb-4">Sichern Sie alle Ihre Daten in einer JSON-Datei.</p>
+                    <Button onClick={handleExport} variant="primary" className="w-full mt-auto">Herunterladen</Button>
+                </div>
+                <div className="p-4 bg-secondary/30 rounded-lg border border-border/50 flex flex-col items-center text-center">
+                    <UploadCloud className="h-8 w-8 text-primary mb-3" />
+                    <h4 className="font-semibold">Backup wiederherstellen</h4>
+                    <p className="text-muted-foreground text-sm mt-1 mb-4">Importieren Sie eine zuvor exportierte Datei.</p>
+                    <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" className="hidden" />
+                    <Button onClick={() => fileInputRef.current?.click()} className="w-full mt-auto">Datei auswählen</Button>
+                </div>
             </div>
-            <div className="border-t border-border/20 pt-6">
-                <h4 className="font-semibold text-lg">Daten importieren</h4>
-                <p className="text-muted-foreground text-sm mt-1"><strong className="text-destructive">Achtung:</strong> Dies überschreibt alle aktuellen Daten.</p>
-                <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" className="hidden" />
-                <Button onClick={() => fileInputRef.current?.click()} className="mt-4 flex items-center gap-2 mx-auto"><UploadCloud size={18} /> Backup wiederherstellen</Button>
+            
+            <div className="pt-6 border-t border-border/20">
+                <h4 className="font-semibold text-destructive mb-2 flex items-center gap-2">
+                    <AlertTriangle size={18}/> Gefahrzone
+                </h4>
+                <div className="p-4 bg-destructive/10 rounded-lg flex items-center justify-between gap-4">
+                    <div>
+                        <p className="font-medium text-destructive-foreground">App zurücksetzen</p>
+                        <p className="text-xs text-muted-foreground">Löscht alle Daten und stellt die Beispieldaten wieder her.</p>
+                    </div>
+                    <Button onClick={handleResetState} variant="destructive" className="flex-shrink-0 flex items-center gap-2">
+                        <RefreshCw size={16} /> Zurücksetzen
+                    </Button>
+                </div>
+            </div>
+        </div>
+    );
+});
+
+const UserProfileModal: React.FC = memo(() => {
+    const { userProfile } = useAppState();
+    const dispatch = useAppDispatch();
+    const [formData, setFormData] = useState({ ...userProfile });
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        dispatch({ type: 'UPDATE_USER_PROFILE', payload: formData });
+        dispatch({ type: 'CLOSE_MODAL' });
+    };
+
+    const initials = formData.name 
+        ? formData.name.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase() 
+        : 'U';
+
+    return (
+        <div className="space-y-6">
+            <div className="flex flex-col items-center mb-6">
+                <div className="w-24 h-24 rounded-full bg-primary/20 text-primary flex items-center justify-center text-3xl font-bold mb-3 border-4 border-background shadow-xl">
+                    {initials}
+                </div>
+                <p className="text-sm text-muted-foreground">Ihr lokales Profil</p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <FormGroup label="Anzeigename" htmlFor="name">
+                    <Input id="name" name="name" value={formData.name} onChange={handleChange} required />
+                </FormGroup>
+                <FormGroup label="E-Mail (Optional)" htmlFor="email">
+                    <Input type="email" id="email" name="email" value={formData.email} onChange={handleChange} placeholder="name@beispiel.de" />
+                </FormGroup>
+                
+                <div className="grid grid-cols-2 gap-4">
+                    <FormGroup label="Währung" htmlFor="currency">
+                        <Select id="currency" name="currency" value={formData.currency} onChange={handleChange} disabled title="Aktuell nur EUR unterstützt">
+                            <option value="EUR">EUR (€)</option>
+                            <option value="USD">USD ($)</option>
+                            <option value="GBP">GBP (£)</option>
+                        </Select>
+                    </FormGroup>
+                    <FormGroup label="Sprache" htmlFor="language">
+                        <Select id="language" name="language" value={formData.language} onChange={handleChange} disabled title="Aktuell nur Deutsch unterstützt">
+                            <option value="de">Deutsch</option>
+                            <option value="en">English</option>
+                        </Select>
+                    </FormGroup>
+                </div>
+
+                <div className="flex justify-end pt-4">
+                    <Button type="submit" variant="primary">Speichern</Button>
+                </div>
+            </form>
+
+            <div className="border-t border-border/20 pt-4 mt-6">
+                <h4 className="font-semibold mb-4 text-sm text-muted-foreground uppercase tracking-wider">Datenverwaltung</h4>
+                <div className="grid grid-cols-1 gap-3">
+                    <button 
+                        onClick={() => dispatch({ type: 'OPEN_MODAL', payload: { type: 'EXPORT_IMPORT_DATA' } })}
+                        className="flex items-center justify-between p-3 rounded-lg bg-secondary hover:bg-secondary/80 transition-colors text-left"
+                    >
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-primary/10 text-primary rounded-md"><FileDown size={18}/></div>
+                            <div>
+                                <p className="font-medium text-sm">Daten Exportieren / Importieren</p>
+                                <p className="text-xs text-muted-foreground">Sichern Sie Ihre Daten oder stellen Sie ein Backup wieder her.</p>
+                            </div>
+                        </div>
+                    </button>
+                </div>
             </div>
         </div>
     );
@@ -1317,6 +1448,7 @@ const MODAL_COMPONENTS: { [key in ModalType['type']]: { component: React.FC<any>
     SUBSCRIPTION: { component: () => <div>Abonnement (in Kürze)</div>, title: 'Abonnement' },
     SYNC_DATA: { component: () => <div>Datensynchronisation (in Kürze)</div>, title: 'Datensynchronisation' },
     MERGE_TRANSACTIONS: { component: MergeTransactionsModal, title: 'Transaktionen zusammenführen' },
+    USER_PROFILE: { component: UserProfileModal, title: 'Benutzerprofil', size: 'lg' },
     ANALYSIS: { component: AnalysisModal, title: 'Cashflow Analyse', size: 'xl' },
 };
 
