@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { Newspaper, Link as LinkIcon, AlertTriangle } from 'lucide-react';
 
 // Define the type for the source links from grounding metadata
@@ -40,41 +40,32 @@ const NewsFeed: React.FC = () => {
 
                 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
                 
-                // Definition des erwarteten Antwortschemas
-                const responseSchema = {
-                    type: Type.ARRAY,
-                    description: "Eine Liste von aktuellen Schlagzeilen.",
-                    items: {
-                        type: Type.STRING,
-                        description: "Der Text der Schlagzeile."
-                    }
-                };
+                // Hinweis: responseMimeType: "application/json" wird bei Verwendung von tools: [{googleSearch: {}}] 
+                // von der API derzeit nicht unterstützt (Fehler 400).
+                // Wir bitten das Modell daher per Prompt um eine einfache Liste und parsen den Text.
 
                 const response = await ai.models.generateContent({
                    model: "gemini-2.5-flash",
-                   contents: "Liste 5 aktuelle und wichtige Schlagzeilen zum Thema persönliche Finanzen, Sparen, Inflation oder Investieren in Deutschland.",
+                   contents: "Finde 5 aktuelle und wichtige Schlagzeilen zum Thema persönliche Finanzen, Sparen, Inflation oder Investieren in Deutschland. Gib bitte NUR die Schlagzeilen zurück, eine pro Zeile, ohne Nummerierung, ohne Einleitungssatz und ohne Markdown-Formatierung.",
                    config: {
                      tools: [{googleSearch: {}}],
-                     responseMimeType: "application/json",
-                     responseSchema: responseSchema,
                    },
                 });
 
                 if (!isMounted) return;
 
-                const jsonStr = response.text;
-                if (jsonStr) {
-                    try {
-                        const parsedHeadlines = JSON.parse(jsonStr);
-                        if (Array.isArray(parsedHeadlines)) {
-                            setHeadlines(parsedHeadlines);
-                        } else {
-                            setHeadlines([]);
-                        }
-                    } catch (e) {
-                        console.error("Fehler beim Parsen der Nachrichten:", e);
-                        setHeadlines([]);
-                    }
+                const text = response.text;
+                if (text) {
+                    // Text zeilenweise splitten und bereinigen
+                    const lines = text.split('\n')
+                        .map(line => line.trim())
+                        .filter(line => line.length > 0)
+                        // Entfernt Aufzählungszeichen wie "1.", "*", "-" falls das Modell sie doch sendet
+                        .map(line => line.replace(/^[\d\.\-\*]+\s+/, ''));
+                    
+                    setHeadlines(lines);
+                } else {
+                    setHeadlines([]);
                 }
 
                 const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
@@ -87,6 +78,7 @@ const NewsFeed: React.FC = () => {
             } catch (err) {
                 if (isMounted) {
                     console.error("Fehler beim Abrufen der Finanznachrichten:", err);
+                    // Detaillierterer Fehler für Debugging, generische Nachricht für User
                     setError("Die Finanznachrichten konnten nicht geladen werden. Bitte versuchen Sie es später erneut.");
                 }
             } finally {
