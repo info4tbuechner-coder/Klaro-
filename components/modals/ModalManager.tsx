@@ -144,7 +144,6 @@ const TransactionDetailModal: React.FC<{ transaction: Transaction }> = memo(({ t
             </div>
 
             <div className="flex justify-between items-center pt-8 border-t border-border/20">
-                {/* FIX: Avoid logical AND with void return type from dispatch. Use block statement instead. */}
                 <button 
                     onClick={() => {
                         if (window.confirm('Löschen?')) {
@@ -217,13 +216,15 @@ const CategoryManagerModal: React.FC = memo(() => {
     const dispatch = useAppDispatch();
     const [name, setName] = useState('');
 
-    const counts = useMemo(() => transactions.reduce((acc, t) => { if(t.categoryId) acc[t.categoryId] = (acc[t.categoryId] || 0) + 1; return acc; }, {} as any), [transactions]);
+    const counts = useMemo(() => transactions.reduce((acc, t) => { 
+        if(t.categoryId) acc[t.categoryId] = (acc[t.categoryId] || 0) + 1; 
+        return acc; 
+    }, {} as Record<string, number>), [transactions]);
 
     return (
         <div className="space-y-10">
             <div className="flex gap-4 bg-secondary/30 p-6 rounded-[2rem] border border-white/5">
                 <Input value={name} onChange={e => setName(e.target.value)} placeholder="Neue Kategorie..." className="rounded-2xl font-bold" />
-                {/* FIX: Use block statement to avoid logical AND with void return type from dispatch. */}
                 <Button 
                     onClick={() => {
                         if (name) {
@@ -246,7 +247,6 @@ const CategoryManagerModal: React.FC = memo(() => {
                                 <span className="font-bold">{c.name}</span>
                                 <div className="flex items-center gap-3">
                                     <span className="text-[10px] font-black bg-secondary px-2 py-0.5 rounded-md opacity-30">{counts[c.id] || 0}</span>
-                                    {/* FIX: Avoid logical AND with void return type from dispatch. */}
                                     <button 
                                         onClick={() => {
                                             if (window.confirm('Löschen?')) {
@@ -270,7 +270,6 @@ const CategoryManagerModal: React.FC = memo(() => {
                                 <span className="font-bold">{c.name}</span>
                                 <div className="flex items-center gap-3">
                                     <span className="text-[10px] font-black bg-secondary px-2 py-0.5 rounded-md opacity-30">{counts[c.id] || 0}</span>
-                                    {/* FIX: Avoid logical AND with void return type from dispatch. */}
                                     <button 
                                         onClick={() => {
                                             if (window.confirm('Löschen?')) {
