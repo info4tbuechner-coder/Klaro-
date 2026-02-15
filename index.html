@@ -3,144 +3,138 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Klaro</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Klaro" />
+  <meta name="theme-color" content="#020617" />
+  <meta name="format-detection" content="telephone=no" />
+  
+  <!-- Manifest & Icons -->
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="https://img.icons8.com/fluency/192/bot.png" />
+  
+  <title>Klaro | Financial Intelligence</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <script src="https://unpkg.com/recharts/umd/Recharts.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
   <style>
     :root {
       --font-sans: 'Plus Jakarta Sans', sans-serif;
       --font-mono: 'JetBrains Mono', monospace;
+      --background-start: 222 47% 2%;
+      --background-end: 222 47% 0%;
+      --foreground: 210 40% 98%;
+      --card: 222 47% 4%;
+      --primary: 190 100% 50%;
+      --secondary: 222 47% 8%;
+      --muted: 222 47% 12%;
+      --muted-foreground: 215 20% 65%;
+      --border: 222 47% 15%;
+      --blob-1: 260 80% 20%;
+      --blob-2: 220 80% 20%;
     }
 
     body {
       font-family: var(--font-sans);
       -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-      overflow-x: hidden;
-    }
-    
-    /* Modernized Themes with richer colors and colored shadows */
-    .theme-grandeur {
-      --background-start: 210 40% 98%;
-      --background-end: 210 40% 95%;
-      --foreground: 222 47% 11%;
-      --card: 0 0% 100%;
-      --card-foreground: 222 47% 11%;
-      --popover: 0 0% 100%;
-      --popover-foreground: 222 47% 11%;
-      --primary: 221 83% 53%;
-      --primary-foreground: 210 40% 98%;
-      --secondary: 210 40% 96.1%;
-      --secondary-foreground: 222 47% 11.2%;
-      --muted: 210 40% 96.1%;
-      --muted-foreground: 215.4 16.3% 46.9%;
-      --accent: 210 40% 96.1%;
-      --accent-foreground: 222 47% 11.2%;
-      --destructive: 0 84.2% 60.2%;
-      --destructive-foreground: 210 40% 98%;
-      --border: 214.3 31.8% 91.4%;
-      --input: 214.3 31.8% 91.4%;
-      --ring: 221 83% 53%;
-      --radius: 1.25rem;
-      --success: 150 100% 36%;
-      --warning: 38 92% 50%;
-      --shadow-color: 221 83% 40%;
+      background-color: hsl(var(--background-start));
+      color: hsl(var(--foreground));
+      min-height: 100vh;
+      min-height: 100dvh;
+      transition: background-color 0.8s ease;
+      overscroll-behavior-y: none;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
+      -webkit-touch-callout: none;
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
     }
 
-    .theme-neon {
-      --background-start: 240 20% 3%;
-      --background-end: 240 20% 2%;
-      --foreground: 0 0% 100%;
-      --card: 240 20% 5%;
-      --card-foreground: 0 0% 100%;
-      --popover: 240 20% 5%;
-      --popover-foreground: 0 0% 100%;
-      --primary: 270 100% 60%;
-      --primary-foreground: 0 0% 100%;
-      --secondary: 240 10% 12%;
-      --secondary-foreground: 0 0% 100%;
-      --muted: 240 10% 12%;
-      --muted-foreground: 240 10% 60%;
-      --accent: 290 100% 50%;
-      --accent-foreground: 0 0% 100%;
-      --destructive: 0 100% 60%;
-      --destructive-foreground: 0 0% 100%;
-      --border: 240 10% 15%;
-      --input: 240 10% 15%;
-      --ring: 270 100% 60%;
-      --radius: 1.5rem;
-      --success: 120 100% 50%;
-      --warning: 60 100% 50%;
-      --shadow-color: 270 100% 40%;
-    }
-
-    /* Premium Glassmorphism */
     .glass-card {
-      background: rgba(255, 255, 255, 0.03);
-      background-color: hsl(var(--card) / 0.75);
-      backdrop-filter: blur(12px) saturate(180%);
-      -webkit-backdrop-filter: blur(12px) saturate(180%);
+      background: hsl(var(--card) / 0.7);
+      backdrop-filter: blur(32px) saturate(200%);
+      -webkit-backdrop-filter: blur(32px) saturate(200%);
       border: 1px solid hsl(var(--foreground) / 0.08);
-      box-shadow: 
-        0 10px 15px -3px rgba(0, 0, 0, 0.1),
-        0 4px 6px -2px rgba(0, 0, 0, 0.05),
-        inset 0 1px 1px 0 rgba(255, 255, 255, 0.05);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+    }
+
+    .blob-container {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      overflow: hidden;
+      filter: blur(140px);
+      opacity: 0.45;
+      pointer-events: none;
+    }
+
+    .blob {
+      position: absolute;
+      width: 70vw;
+      height: 70vw;
+      border-radius: 50%;
+      background: hsl(var(--blob-1));
+      animation: drift 30s infinite alternate ease-in-out;
+    }
+
+    .blob-2 {
+      background: hsl(var(--blob-2));
+      width: 60vw;
+      height: 60vw;
+      right: -10vw;
+      bottom: -10vw;
+      animation-duration: 40s;
+    }
+
+    @keyframes drift {
+      from { transform: translate(-10%, -10%) rotate(0deg); }
+      to { transform: translate(20%, 20%) rotate(180deg); }
+    }
+
+    input, select, textarea { 
+        font-size: 16px !important; 
+        user-select: text !important;
+        -webkit-user-select: text !important;
+        -webkit-touch-callout: default;
+    } 
+
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    
+    button:active {
+      transform: scale(0.96);
+      opacity: 0.9;
+    }
+
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
     }
     
-    .dark .glass-card {
-        background-color: hsl(var(--card) / 0.5);
-        border: 1px solid hsl(var(--foreground) / 0.1);
-        box-shadow: 0 20px 50px -12px rgba(0,0,0,0.5);
+    .shimmer {
+      background: linear-gradient(90deg, 
+        rgba(255,255,255,0.03) 25%, 
+        rgba(255,255,255,0.08) 50%, 
+        rgba(255,255,255,0.03) 75%
+      );
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite linear;
     }
 
-    /* Noise Texture Overlay */
-    body::before {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100vw;
-        height: 100vh;
-        content: "";
-        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
-        pointer-events: none;
-        z-index: 9999;
-        opacity: 0.4;
-        mix-blend-mode: overlay;
+    .modal-open {
+      overflow: hidden;
+      position: fixed;
+      width: 100%;
+      touch-action: none;
     }
 
-    /* Animation Utilities */
-    .animate-in-fade {
-        animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-    }
-    
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(15px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-
-    .font-mono {
-        font-family: var(--font-mono);
-        font-variant-numeric: tabular-nums;
-    }
-
-    ::-webkit-scrollbar {
-        width: 6px;
-    }
-    ::-webkit-scrollbar-track {
-        background: transparent;
-    }
-    ::-webkit-scrollbar-thumb {
-        background: hsl(var(--muted-foreground) / 0.2);
-        border-radius: 99px;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-        background: hsl(var(--muted-foreground) / 0.4);
+    /* Pull to refresh prevention */
+    html {
+        overscroll-behavior-y: contain;
     }
   </style>
 <script type="importmap">
@@ -150,15 +144,19 @@
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
     "react/": "https://aistudiocdn.com/react@^19.1.1/",
     "@google/genai": "https://aistudiocdn.com/@google/genai@^1.16.0",
-    "date-fns/": "https://aistudiocdn.com/date-fns@^4.1.0/",
     "date-fns": "https://aistudiocdn.com/date-fns@^4.1.0",
     "lucide-react": "https://aistudiocdn.com/lucide-react@^0.542.0",
-    "recharts": "https://aistudiocdn.com/recharts@^3.1.2"
+    "recharts": "https://aistudiocdn.com/recharts@^3.1.2",
+    "date-fns/": "https://esm.sh/date-fns@^4.1.0/"
   }
 }
 </script>
 </head>
 <body class="antialiased">
+  <div class="blob-container">
+    <div class="blob"></div>
+    <div class="blob blob-2"></div>
+  </div>
   <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
 </body>

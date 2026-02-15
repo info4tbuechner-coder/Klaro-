@@ -1,7 +1,11 @@
 
-import React, { createContext, useContext, useMemo, useReducer, useEffect } from 'react';
-// FIX: Import AppState from types.ts where it's now defined.
-import { Transaction, Category, Goal, Project, RecurringTransaction, Theme, ViewMode, Filters, ModalType, TransactionType, CategoryType, GoalType, Frequency, DateRangePreset, ReportsData, DashboardStats, Liability, LiabilityType, Action, AppState } from '../types';
+import React, { createContext, useContext, useMemo, useReducer } from 'react';
+import { 
+    Transaction, Category, Goal, Project, RecurringTransaction, 
+    Theme, ViewMode, Filters, ModalType, TransactionType, 
+    CategoryType, GoalType, Frequency, DateRangePreset, 
+    DashboardStats, Liability, LiabilityType, Action, AppState 
+} from '../types';
 import useLocalStorage from '../hooks/useLocalStorage';
 import { format } from 'date-fns/format';
 import { startOfMonth } from 'date-fns/startOfMonth';
@@ -9,416 +13,157 @@ import { endOfMonth } from 'date-fns/endOfMonth';
 import { startOfYear } from 'date-fns/startOfYear';
 import { endOfYear } from 'date-fns/endOfYear';
 import { subMonths } from 'date-fns/subMonths';
-import { subYears } from 'date-fns/subYears';
-import { sub } from 'date-fns/sub';
-import { add } from 'date-fns/add';
+import { eachMonthOfInterval } from 'date-fns/eachMonthOfInterval';
+import { isSameMonth } from 'date-fns/isSameMonth';
 import { parseISO } from 'date-fns/parseISO';
 import { de } from 'date-fns/locale/de';
-import { differenceInDays } from 'date-fns/differenceInDays';
-import { endOfDay } from 'date-fns/endOfDay';
-import { isAfter } from 'date-fns/isAfter';
-import { isBefore } from 'date-fns/isBefore';
 
 const AppStateContext = createContext<AppState | undefined>(undefined);
 const AppDispatchContext = createContext<React.Dispatch<Action> | undefined>(undefined);
 
+const STORAGE_KEY = 'klaro-v5-master';
+
+const getDatesFromPreset = (preset: DateRangePreset): { from: string; to: string } => {
+    const now = new Date();
+    switch (preset) {
+        case 'this_month':
+            return { from: format(startOfMonth(now), 'yyyy-MM-dd'), to: format(endOfMonth(now), 'yyyy-MM-dd') };
+        case 'last_month':
+            const lastMonth = subMonths(now, 1);
+            return { from: format(startOfMonth(lastMonth), 'yyyy-MM-dd'), to: format(endOfMonth(lastMonth), 'yyyy-MM-dd') };
+        case 'this_year':
+            return { from: format(startOfYear(now), 'yyyy-MM-dd'), to: format(endOfYear(now), 'yyyy-MM-dd') };
+        case 'all_time':
+            return { from: '1900-01-01', to: '2100-12-31' };
+        default:
+            return { from: format(startOfMonth(now), 'yyyy-MM-dd'), to: format(endOfMonth(now), 'yyyy-MM-dd') };
+    }
+};
+
 const initialFilters: Filters = {
     dateRange: {
         preset: 'this_month',
-        from: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
-        to: format(endOfMonth(new Date()), 'yyyy-MM-dd'),
+        ...getDatesFromPreset('this_month')
     },
     searchTerm: '',
     transactionType: 'all',
     categoryId: 'all',
-    amountRange: {
-        min: '',
-        max: '',
-    },
+    amountRange: { min: '', max: '' },
     tags: [],
     liabilityId: 'all',
     goalId: 'all',
     categoryStatus: 'all',
 };
 
-const sampleData = {
-    transactions: [],
-    categories: [
-        { id: 'c1', name: 'Gehalt', type: CategoryType.INCOME },
-        { id: 'c2', name: 'Wohnen', type: CategoryType.EXPENSE, budget: 0 },
-        { id: 'c3', name: 'Lebensmittel', type: CategoryType.EXPENSE, budget: 0 },
-        { id: 'c4', name: 'Transport', type: CategoryType.EXPENSE, budget: 0 },
-        { id: 'c5', name: 'Versicherung', type: CategoryType.EXPENSE, budget: 0 },
-        { id: 'c6', name: 'Freizeit', type: CategoryType.EXPENSE, budget: 0 },
-        { id: 'c7', name: 'Sparen & Investments', type: CategoryType.EXPENSE },
-        { id: 'c8', name: 'Sonstiges', type: CategoryType.EXPENSE },
-    ],
-    goals: [],
-    liabilities: [],
-    projects: [],
-    recurringTransactions: []
-};
+const sampleCategories: Category[] = [
+    { id: 'c1', name: 'Gehalt', type: CategoryType.INCOME },
+    { id: 'c2', name: 'Wohnen', type: CategoryType.EXPENSE, budget: 1200 },
+    { id: 'c3', name: 'Lebensmittel', type: CategoryType.EXPENSE, budget: 400 },
+    { id: 'c4', name: 'Transport', type: CategoryType.EXPENSE, budget: 150 },
+    { id: 'c5', name: 'Versicherung', type: CategoryType.EXPENSE, budget: 100 },
+    { id: 'c6', name: 'Freizeit', type: CategoryType.EXPENSE, budget: 200 },
+    { id: 'c7', name: 'Shopping', type: CategoryType.EXPENSE, budget: 100 },
+    { id: 'c8', name: 'Gesundheit', type: CategoryType.EXPENSE, budget: 50 },
+];
 
 const initialState: AppState = {
-    userProfile: {
-        name: 'Benutzer',
-        email: '',
-        currency: 'EUR',
-        language: 'de'
-    },
-    transactions: sampleData.transactions,
-    categories: sampleData.categories,
-    goals: sampleData.goals,
-    projects: sampleData.projects,
-    recurringTransactions: sampleData.recurringTransactions,
-    liabilities: sampleData.liabilities,
-    theme: 'grandeur',
+    userProfile: { name: 'Finanzprofi', email: 'hello@klaro.ai', currency: 'EUR', language: 'de' },
+    transactions: [],
+    categories: sampleCategories,
+    goals: [],
+    projects: [],
+    recurringTransactions: [],
+    liabilities: [],
+    theme: 'onyx',
     viewMode: 'all',
     filters: initialFilters,
     isSubscribed: false,
     activeModal: null,
     selectedTransactions: new Set(),
     debugMode: false,
+    syncStatus: 'idle',
+    lastSyncAt: null,
+    onboardingComplete: false,
 };
 
-const recalculateGoalAmounts = (transactions: Transaction[], goals: Goal[]): Goal[] => {
-    const goalAmounts = new Map<string, number>();
-
-    transactions.forEach(t => {
-        if (t.type === TransactionType.SAVING && t.goalId) {
-            goalAmounts.set(t.goalId, (goalAmounts.get(t.goalId) || 0) + t.amount);
+const deepMerge = (target: any, source: any) => {
+    const output = { ...target };
+    Object.keys(source).forEach(key => {
+        if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key]) && !(source[key] instanceof Set)) {
+            output[key] = deepMerge(target[key] || {}, source[key]);
+        } else if (target[key] === undefined) {
+            output[key] = source[key];
         }
     });
-
-    return goals.map(g => ({
-        ...g,
-        currentAmount: goalAmounts.get(g.id) || 0,
-    }));
-};
-
-const recalculateLiabilityAmounts = (transactions: Transaction[], liabilities: Liability[]): Liability[] => {
-    const liabilityAmounts = new Map<string, number>();
-
-    transactions.forEach(t => {
-        if (t.liabilityId) {
-            const liability = liabilities.find(l => l.id === t.liabilityId);
-            if (liability) {
-                if ((liability.type === LiabilityType.DEBT && t.type === TransactionType.EXPENSE) ||
-                    (liability.type === LiabilityType.LOAN && t.type === TransactionType.INCOME)) {
-                    liabilityAmounts.set(t.liabilityId, (liabilityAmounts.get(t.liabilityId) || 0) + t.amount);
-                }
-            }
-        }
-    });
-
-    return liabilities.map(l => ({
-        ...l,
-        paidAmount: liabilityAmounts.get(l.id) || 0,
-    }));
+    return output;
 };
 
 const appReducer = (state: AppState, action: Action): AppState => {
     switch (action.type) {
-        case 'SET_THEME':
-            return { ...state, theme: action.payload };
-        case 'SET_VIEW_MODE':
-            return { ...state, viewMode: action.payload };
-        case 'UPDATE_FILTERS':
-            return { ...state, filters: { ...state.filters, ...action.payload } };
-        case 'SET_IS_SUBSCRIBED':
-            return { ...state, isSubscribed: action.payload };
-        case 'UPDATE_USER_PROFILE':
-            return { ...state, userProfile: { ...state.userProfile, ...action.payload } };
-        case 'OPEN_MODAL':
-            return { ...state, activeModal: action.payload };
-        case 'CLOSE_MODAL':
-            return { ...state, activeModal: null };
-        case 'TOGGLE_DEBUG_MODE':
-            return { ...state, debugMode: !state.debugMode };
-        case 'SET_SELECTED_TRANSACTIONS': {
-            const newSelected = typeof action.payload === 'function'
-                ? action.payload(state.selectedTransactions)
-                : action.payload;
-            return { ...state, selectedTransactions: newSelected };
-        }
-        case 'ADD_TRANSACTION': {
-            const newTransaction = { ...action.payload, id: new Date().toISOString() + Math.random() };
-            const newTransactions = [...state.transactions, newTransaction];
-            const newGoals = recalculateGoalAmounts(newTransactions, state.goals);
-            const newLiabilities = recalculateLiabilityAmounts(newTransactions, state.liabilities);
-            return { ...state, transactions: newTransactions, goals: newGoals, liabilities: newLiabilities, activeModal: null };
-        }
-        case 'UPDATE_TRANSACTION': {
-            const newTransactions = state.transactions.map(t => t.id === action.payload.id ? action.payload : t);
-            const newGoals = recalculateGoalAmounts(newTransactions, state.goals);
-            const newLiabilities = recalculateLiabilityAmounts(newTransactions, state.liabilities);
-            return { ...state, transactions: newTransactions, goals: newGoals, liabilities: newLiabilities, activeModal: null };
-        }
-        case 'DELETE_TRANSACTIONS': {
-            const newTransactions = state.transactions.filter(t => !action.payload.includes(t.id));
-            const newGoals = recalculateGoalAmounts(newTransactions, state.goals);
-            const newLiabilities = recalculateLiabilityAmounts(newTransactions, state.liabilities);
-            return { ...state, transactions: newTransactions, goals: newGoals, liabilities: newLiabilities, selectedTransactions: new Set() };
-        }
-        case 'MERGE_TRANSACTIONS': {
-            const { transactionIds, newDescription } = action.payload;
-            const toMerge = state.transactions.filter(t => transactionIds.includes(t.id));
-            if (toMerge.length < 2) return state;
-
-            const mergedTransaction: Transaction = {
-                id: new Date().toISOString() + Math.random(),
-                description: newDescription,
-                amount: toMerge.reduce((sum, t) => sum + t.amount, 0),
-                date: toMerge.reduce((latest, t) => (t.date > latest ? t.date : latest), toMerge[0].date),
-                type: toMerge[0].type,
-                categoryId: toMerge[0].categoryId,
-                goalId: toMerge[0].goalId,
-                liabilityId: toMerge[0].liabilityId,
-                tags: Array.from(new Set(toMerge.flatMap(t => t.tags || []))),
-            };
-
-            const remainingTransactions = state.transactions.filter(t => !transactionIds.includes(t.id));
-            const newTransactions = [...remainingTransactions, mergedTransaction];
-            const newGoals = recalculateGoalAmounts(newTransactions, state.goals);
-            const newLiabilities = recalculateLiabilityAmounts(newTransactions, state.liabilities);
-            return { ...state, transactions: newTransactions, goals: newGoals, liabilities: newLiabilities, activeModal: null, selectedTransactions: new Set() };
-        }
-        case 'CATEGORIZE_TRANSACTIONS': {
-            const newTransactions = state.transactions.map(t => action.payload.ids.includes(t.id) ? { ...t, categoryId: action.payload.categoryId } : t);
-            return { ...state, transactions: newTransactions, selectedTransactions: new Set() };
-        }
-        case 'ADD_CATEGORY': {
-            const newCategory = { ...action.payload, id: new Date().toISOString() };
-            return { ...state, categories: [...state.categories, newCategory] };
-        }
-        case 'UPDATE_CATEGORY': {
-            return { ...state, categories: state.categories.map(c => c.id === action.payload.id ? action.payload : c) };
-        }
-        case 'DELETE_CATEGORY': {
-            return {
-                ...state,
-                categories: state.categories.filter(c => c.id !== action.payload),
-                transactions: state.transactions.map(t => t.categoryId === action.payload ? { ...t, categoryId: undefined } : t),
-                recurringTransactions: state.recurringTransactions.map(rt => rt.categoryId === action.payload ? { ...rt, categoryId: undefined } : rt)
-            };
-        }
-         case 'DELETE_UNUSED_CATEGORIES': {
-            const usedCategoryIds = new Set(state.transactions.map(t => t.categoryId));
-            return { ...state, categories: state.categories.filter(c => usedCategoryIds.has(c.id)) };
-        }
-        case 'REORDER_CATEGORIES':
-             return { ...state, categories: action.payload };
-        case 'ADD_GOAL': {
-            const newGoal: Goal = { ...action.payload, id: new Date().toISOString(), currentAmount: 0 };
-            return { ...state, goals: [...state.goals, newGoal] };
-        }
-        case 'UPDATE_GOAL': {
-            const { currentAmount, ...goalData } = action.payload;
-            const newGoals = state.goals.map(g => g.id === action.payload.id ? { ...g, ...goalData } : g);
-            return { ...state, goals: newGoals };
-        }
-        case 'DELETE_GOAL': {
-            return {
-                ...state,
-                goals: state.goals.filter(g => g.id !== action.payload),
-                transactions: state.transactions.map(t => t.goalId === action.payload ? { ...t, goalId: undefined } : t),
-                recurringTransactions: state.recurringTransactions.map(rt => rt.goalId === action.payload ? { ...rt, goalId: undefined } : rt)
-            };
-        }
-        case 'ADD_PROJECT': {
-            const newProject: Project = { ...action.payload, id: new Date().toISOString() };
-            return { ...state, projects: [...state.projects, newProject] };
-        }
-        case 'UPDATE_PROJECT': {
-            return { ...state, projects: state.projects.map(p => p.id === action.payload.id ? action.payload : p) };
-        }
-        case 'DELETE_PROJECT': {
-            const projectToDelete = state.projects.find(p => p.id === action.payload);
-            if (!projectToDelete) return state;
-            // Optional: remove tag from transactions. For now, we leave them as generic tags.
-            return { ...state, projects: state.projects.filter(p => p.id !== action.payload) };
-        }
-        case 'ADD_RECURRING': {
-            const { startDate } = action.payload;
-            const newRecurring: RecurringTransaction = { ...action.payload, id: new Date().toISOString(), nextDueDate: startDate };
-            return { ...state, recurringTransactions: [...state.recurringTransactions, newRecurring] };
-        }
-        case 'UPDATE_RECURRING': {
-            const originalTx = state.recurringTransactions.find(rt => rt.id === action.payload.id);
-            // If nextDueDate is explicitly provided (e.g. from automatic processing), use it. Otherwise keep existing.
-            const nextDueDate = action.payload.nextDueDate || (originalTx ? originalTx.nextDueDate : action.payload.startDate);
-            
+        case 'SET_THEME': return { ...state, theme: action.payload };
+        case 'SET_VIEW_MODE': return { ...state, viewMode: action.payload };
+        case 'UPDATE_FILTERS': 
+            const newFilters = { ...state.filters, ...action.payload };
+            if (action.payload.dateRange?.preset && action.payload.dateRange.preset !== 'custom') {
+                const calculated = getDatesFromPreset(action.payload.dateRange.preset);
+                newFilters.dateRange = { ...newFilters.dateRange, ...calculated };
+            }
+            return { ...state, filters: newFilters };
+        case 'OPEN_MODAL': return { ...state, activeModal: action.payload };
+        case 'CLOSE_MODAL': return { ...state, activeModal: null };
+        case 'UPDATE_USER_PROFILE': return { ...state, userProfile: { ...state.userProfile, ...action.payload } };
+        case 'ADD_TRANSACTION': return { ...state, transactions: [{ ...action.payload, id: crypto.randomUUID() }, ...state.transactions], activeModal: null };
+        case 'UPDATE_TRANSACTION': return { ...state, transactions: state.transactions.map(t => t.id === action.payload.id ? action.payload : t), activeModal: null };
+        case 'DELETE_TRANSACTIONS': 
             return { 
                 ...state, 
-                recurringTransactions: state.recurringTransactions.map(rt => 
-                    rt.id === action.payload.id ? { ...action.payload, nextDueDate } : rt
-                ) 
-            };
-        }
-        case 'DELETE_RECURRING': {
-            return { ...state, recurringTransactions: state.recurringTransactions.filter(rt => rt.id !== action.payload) };
-        }
-        case 'ADD_LIABILITY': {
-            const newLiability: Liability = { ...action.payload, id: new Date().toISOString(), paidAmount: 0 };
-            return { ...state, liabilities: [...state.liabilities, newLiability] };
-        }
-        case 'UPDATE_LIABILITY': {
-            // Protect the calculated `paidAmount` from being accidentally overwritten by form data.
-            // This pattern ensures data integrity and improves overall app stability.
-            const { paidAmount, ...liabilityData } = action.payload;
-            const newLiabilities = state.liabilities.map(l =>
-                l.id === action.payload.id ? { ...l, ...liabilityData } : l
-            );
-            return { ...state, liabilities: newLiabilities };
-        }
-        case 'DELETE_LIABILITY': {
-             return {
-                ...state,
-                liabilities: state.liabilities.filter(l => l.id !== action.payload),
-                transactions: state.transactions.map(t => t.liabilityId === action.payload ? { ...t, liabilityId: undefined } : t)
-            };
-        }
-        case 'IMPORT_DATA': {
-            const importedState = action.payload;
-            const transactions = importedState.transactions || state.transactions;
-            // Recalculate derived state after import
-            const goals = recalculateGoalAmounts(transactions, importedState.goals || state.goals);
-            const liabilities = recalculateLiabilityAmounts(transactions, importedState.liabilities || state.liabilities);
-
-            return { 
-                ...state, 
-                ...importedState,
-                // Ensure userProfile exists if importing old data
-                userProfile: importedState.userProfile || state.userProfile,
-                goals,
-                liabilities,
+                transactions: state.transactions.filter(t => !action.payload.includes(t.id)), 
+                selectedTransactions: new Set(),
                 activeModal: null
             };
-        }
-        case 'RESET_STATE': {
-            // Reset to initial sample data but preserve the user's theme choice.
-            return {
-                ...initialState,
-                theme: state.theme,
-            };
-        }
-        case 'CLEAR_ALL_DATA': {
-            // Clear all user data but keep settings like theme and user profile.
+        case 'CATEGORIZE_TRANSACTIONS':
             return {
                 ...state,
-                transactions: [],
-                categories: [],
-                goals: [],
-                projects: [],
-                recurringTransactions: [],
-                liabilities: [],
-                selectedTransactions: new Set(),
-                activeModal: null,
+                transactions: state.transactions.map(t => 
+                    action.payload.ids.includes(t.id) ? { ...t, categoryId: action.payload.categoryId } : t
+                ),
+                selectedTransactions: new Set()
             };
-        }
-        default:
-            return state;
+        case 'ADD_CATEGORY': return { ...state, categories: [...state.categories, { ...action.payload, id: crypto.randomUUID() }] };
+        case 'UPDATE_CATEGORY': return { ...state, categories: state.categories.map(c => c.id === action.payload.id ? action.payload : c) };
+        case 'DELETE_CATEGORY': return { ...state, categories: state.categories.filter(c => c.id !== action.payload) };
+        case 'ADD_GOAL': return { ...state, goals: [...state.goals, { ...action.payload, id: crypto.randomUUID(), currentAmount: 0 }] };
+        case 'UPDATE_GOAL': return { ...state, goals: state.goals.map(g => g.id === action.payload.id ? action.payload : g) };
+        case 'DELETE_GOAL': return { ...state, goals: state.goals.filter(g => g.id !== action.payload) };
+        case 'ADD_PROJECT': return { ...state, projects: [...state.projects, { ...action.payload, id: crypto.randomUUID() }] };
+        case 'IMPORT_DATA': 
+            return { 
+                ...state, 
+                ...action.payload,
+                selectedTransactions: new Set()
+            };
+        case 'SET_SELECTED_TRANSACTIONS': 
+            const nextSet = typeof action.payload === 'function' ? action.payload(state.selectedTransactions) : action.payload;
+            return { ...state, selectedTransactions: nextSet };
+        case 'RESET_STATE': return { ...initialState, theme: state.theme };
+        case 'TOGGLE_DEBUG_MODE': return { ...state, debugMode: !state.debugMode };
+        case 'SET_SYNC_STATUS': return { ...state, syncStatus: action.payload };
+        case 'SYNC_COMPLETED': return { ...state, syncStatus: 'success', lastSyncAt: action.payload };
+        case 'COMPLETE_ONBOARDING': return { ...state, onboardingComplete: true };
+        default: return state;
     }
 };
 
-
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [storedState, setStoredState] = useLocalStorage<AppState>('klaro-state', initialState);
+    const [storedState, setStoredState] = useLocalStorage<AppState>(STORAGE_KEY, initialState);
+    const hydratedState = useMemo(() => deepMerge(storedState || {}, initialState), [storedState]);
 
-    // Recalculate derived state on initial load to ensure consistency
-    const initialStateWithRecalculations = useMemo(() => {
-        const goals = recalculateGoalAmounts(storedState.transactions, storedState.goals);
-        const liabilities = recalculateLiabilityAmounts(storedState.transactions, storedState.liabilities);
-        // Fallback for userProfile if loading from older local storage
-        const userProfile = storedState.userProfile || initialState.userProfile;
-        
-        return { ...storedState, goals, liabilities, userProfile, activeModal: { type: 'MANAGE_CATEGORIES' } as ModalType };
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    const [state, dispatch] = useReducer((s: AppState, a: Action) => {
+        const next = appReducer(s, a);
+        setStoredState(next);
+        return next;
+    }, hydratedState);
 
-
-    const reducerWithSideEffects = (state: AppState, action: Action) => {
-        const newState = appReducer(state, action);
-        // Do not persist state for actions that don't change core data
-        // to avoid unnecessary writes to localStorage.
-        const nonPersistentActions = new Set(['SET_SELECTED_TRANSACTIONS', 'OPEN_MODAL', 'CLOSE_MODAL', 'UPDATE_FILTERS', 'TOGGLE_DEBUG_MODE']);
-        if (!nonPersistentActions.has(action.type)) {
-            const stateToStore = {
-                ...newState,
-                activeModal: null,
-                selectedTransactions: new Set<string>(),
-                debugMode: false // Always reset debug mode on storage
-            };
-            setStoredState(stateToStore);
-        }
-        return newState;
-    };
-    
-    const [state, dispatch] = useReducer(reducerWithSideEffects, initialStateWithRecalculations);
-
-    // Automatic processing of recurring transactions
-    useEffect(() => {
-        const processRecurringTransactions = () => {
-            const today = new Date();
-            const todayStr = format(today, 'yyyy-MM-dd');
-            let hasChanges = false;
-
-            state.recurringTransactions.forEach(rt => {
-                // If nextDueDate is today or in the past
-                if (rt.nextDueDate && rt.nextDueDate <= todayStr) {
-                    // Check if there is an end date and if we passed it
-                    if (rt.endDate && rt.nextDueDate > rt.endDate) return;
-
-                    hasChanges = true;
-                    
-                    // 1. Create the transaction
-                    const newTx: Omit<Transaction, 'id'> = {
-                        type: rt.type,
-                        amount: rt.amount,
-                        description: rt.description,
-                        date: rt.nextDueDate,
-                        categoryId: rt.categoryId,
-                        goalId: rt.goalId,
-                        tags: ['dauerauftrag', ...(rt.isBill ? ['rechnung'] : [])]
-                    };
-                    
-                    dispatch({ type: 'ADD_TRANSACTION', payload: newTx });
-
-                    // 2. Calculate next due date
-                    const currentDueDate = parseISO(rt.nextDueDate);
-                    let nextDate = currentDueDate;
-                    
-                    switch (rt.frequency) {
-                        case Frequency.DAILY:
-                            nextDate = add(currentDueDate, { days: rt.interval });
-                            break;
-                        case Frequency.WEEKLY:
-                            nextDate = add(currentDueDate, { weeks: rt.interval });
-                            break;
-                        case Frequency.MONTHLY:
-                            nextDate = add(currentDueDate, { months: rt.interval });
-                            break;
-                        case Frequency.YEARLY:
-                            nextDate = add(currentDueDate, { years: rt.interval });
-                            break;
-                    }
-                    
-                    const nextDueDateStr = format(nextDate, 'yyyy-MM-dd');
-
-                    // 3. Update the recurring transaction
-                    dispatch({ 
-                        type: 'UPDATE_RECURRING', 
-                        payload: { ...rt, nextDueDate: nextDueDateStr } 
-                    });
-                }
-            });
-        };
-
-        // Run strictly once on mount (or when list changes significantly, though we want to avoid infinite loops)
-        // Using a timeout to not block initial render
-        const timer = setTimeout(processRecurringTransactions, 1000);
-        return () => clearTimeout(timer);
-    }, [state.recurringTransactions]); // Dependency changed from .length to array to catch content updates
-    
     return (
         <AppStateContext.Provider value={state}>
             <AppDispatchContext.Provider value={dispatch}>
@@ -427,305 +172,180 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         </AppStateContext.Provider>
     );
 };
-// ... exports ...
-export const useAppState = (): AppState => {
+
+export const useAppState = () => {
     const context = useContext(AppStateContext);
-    if (context === undefined) {
-        throw new Error('useAppState must be used within a AppProvider');
-    }
+    if (!context) throw new Error('useAppState missing Provider');
     return context;
 };
 
-export const useAppDispatch = (): React.Dispatch<Action> => {
+export const useAppDispatch = () => {
     const context = useContext(AppDispatchContext);
-    if (context === undefined) {
-        throw new Error('useAppDispatch must be used within a AppProvider');
-    }
+    if (!context) throw new Error('useAppDispatch missing Provider');
     return context;
 };
-// ... rest of hooks ...
-export const useFilteredTransactions = (): Transaction[] => {
+
+export const useFilteredTransactions = () => {
     const { transactions, filters, viewMode } = useAppState();
-
-    const getDateRangeStrings = (preset: DateRangePreset): { from: string, to: string } => {
-        const now = new Date();
-        const fmt = (d: Date) => format(d, 'yyyy-MM-dd');
-
-        switch (preset) {
-            case 'this_month':
-                return { from: fmt(startOfMonth(now)), to: fmt(endOfMonth(now)) };
-            case 'last_month':
-                const lastMonth = subMonths(now, 1);
-                return { from: fmt(startOfMonth(lastMonth)), to: fmt(endOfMonth(lastMonth)) };
-            case 'this_year':
-                return { from: fmt(startOfYear(now)), to: fmt(endOfYear(now)) };
-            default:
-                return { from: '1970-01-01', to: '2999-12-31'};
-        }
-    };
-
     return useMemo(() => {
-        let fromStr: string, toStr: string;
-        
-        if (filters.dateRange.preset === 'custom') {
-            fromStr = filters.dateRange.from;
-            toStr = filters.dateRange.to;
-        } else {
-            const range = getDateRangeStrings(filters.dateRange.preset);
-            fromStr = range.from;
-            toStr = range.to;
-        }
-
-        const searchTerm = filters.searchTerm.toLowerCase();
-        
-        return transactions.filter(t => {
-            // Optimization: String comparison for ISO dates (YYYY-MM-DD)
-            // This avoids creating Date objects in the loop.
-            if (t.date < fromStr || t.date > toStr) return false;
-
-            if (filters.transactionType !== 'all' && t.type !== filters.transactionType) return false;
-
-            const minVal = filters.amountRange.min === '' ? NaN : parseFloat(filters.amountRange.min);
-            const maxVal = filters.amountRange.max === '' ? NaN : parseFloat(filters.amountRange.max);
-
-            if (!isNaN(minVal) && t.amount < minVal) return false;
-            if (!isNaN(maxVal) && t.amount > maxVal) return false;
-
-            if (searchTerm && !t.description.toLowerCase().includes(searchTerm) && !t.tags?.some(tag => tag.toLowerCase().includes(searchTerm))) return false;
-
-            if (filters.tags.length > 0 && !filters.tags.every(tag => t.tags?.includes(tag))) return false;
-            
-            if (viewMode !== 'all') {
-                if(viewMode === 'private' && t.tags?.includes('business')) return false;
-                if(viewMode === 'business' && !t.tags?.includes('business')) return false;
+        const f = filters || initialFilters;
+        return (transactions || []).filter(t => {
+            if (viewMode === 'private' && t.tags?.includes('business')) return false;
+            if (viewMode === 'business' && !t.tags?.includes('business')) return false;
+            if (f.transactionType !== 'all' && t.type !== f.transactionType) return false;
+            if (t.date < f.dateRange.from || t.date > f.dateRange.to) return false;
+            if (f.categoryId !== 'all' && t.categoryId !== f.categoryId) return false;
+            if (f.categoryStatus === 'uncategorized' && t.categoryId) return false;
+            if (f.categoryStatus === 'categorized' && !t.categoryId) return false;
+            if (f.searchTerm) {
+                const search = f.searchTerm.toLowerCase();
+                if (!t.description.toLowerCase().includes(search)) return false;
             }
-
-            if(filters.categoryStatus !== 'all') {
-                if(filters.categoryStatus === 'categorized' && !t.categoryId) return false;
-                if(filters.categoryStatus === 'uncategorized' && t.categoryId) return false;
-            }
-
-            // New filter for categoryId
-            if (filters.categoryId !== 'all' && t.categoryId !== filters.categoryId) return false;
-
-            if(filters.goalId !== 'all' && t.goalId !== filters.goalId) return false;
-
-            if(filters.liabilityId !== 'all' && t.liabilityId !== filters.liabilityId) return false;
-
+            if (f.amountRange.min && t.amount < parseFloat(f.amountRange.min)) return false;
+            if (f.amountRange.max && t.amount > parseFloat(f.amountRange.max)) return false;
             return true;
-        }).sort((a, b) => b.date.localeCompare(a.date));
+        });
     }, [transactions, filters, viewMode]);
 };
 
 export const useDashboardStats = (): DashboardStats => {
-    const filteredTransactions = useFilteredTransactions();
-    const { transactions, filters } = useAppState();
-
+    const { transactions } = useAppState();
+    const filtered = useFilteredTransactions();
+    
     return useMemo(() => {
-        const { preset, from, to } = filters.dateRange;
-        let currentPeriodStart: Date, currentPeriodEnd: Date;
-        let previousPeriodStart: Date, previousPeriodEnd: Date;
+        const calculateStats = (list: Transaction[]) => list.reduce((acc, t) => {
+            if (t.type === TransactionType.INCOME) acc.income += t.amount;
+            else if (t.type === TransactionType.EXPENSE) acc.expense += t.amount;
+            else if (t.type === TransactionType.SAVING) acc.saving += t.amount;
+            return acc;
+        }, { income: 0, expense: 0, saving: 0 });
 
-        const now = new Date();
-
-        // Determine current period
-        switch (preset) {
-            case 'this_month':
-                currentPeriodStart = startOfMonth(now);
-                currentPeriodEnd = endOfMonth(now);
-                previousPeriodStart = startOfMonth(subMonths(now, 1));
-                previousPeriodEnd = endOfMonth(subMonths(now, 1));
-                break;
-            case 'last_month':
-                const lastMonth = subMonths(now, 1);
-                currentPeriodStart = startOfMonth(lastMonth);
-                currentPeriodEnd = endOfMonth(lastMonth);
-                previousPeriodStart = startOfMonth(subMonths(now, 2));
-                previousPeriodEnd = endOfMonth(subMonths(now, 2));
-                break;
-            case 'this_year':
-                currentPeriodStart = startOfYear(now);
-                currentPeriodEnd = endOfYear(now);
-                previousPeriodStart = startOfYear(subYears(now, 1));
-                previousPeriodEnd = endOfYear(subYears(now, 1));
-                break;
-            case 'all_time':
-                 // No trend for all_time
-                currentPeriodStart = new Date(0);
-                currentPeriodEnd = new Date();
-                previousPeriodStart = new Date(0);
-                previousPeriodEnd = new Date(0);
-                break;
-            case 'custom':
-            default:
-                currentPeriodStart = parseISO(from);
-                currentPeriodEnd = parseISO(to);
-                const duration = differenceInDays(currentPeriodEnd, currentPeriodStart);
-                previousPeriodEnd = sub(currentPeriodStart, { days: 1 });
-                previousPeriodStart = sub(previousPeriodEnd, { days: duration });
-                break;
-        }
-
-        const currentPeriodStats = { income: 0, expense: 0, saving: 0 };
-        const previousPeriodStats = { income: 0, expense: 0, saving: 0 };
-
-        // Current period stats are already calculated by useFilteredTransactions
-        filteredTransactions.forEach(t => {
-            if (t.type === TransactionType.INCOME) currentPeriodStats.income += t.amount;
-            else if (t.type === TransactionType.EXPENSE) currentPeriodStats.expense += t.amount;
-            else if (t.type === TransactionType.SAVING) currentPeriodStats.saving += t.amount;
-        });
-
-        // Calculate previous period stats by filtering all transactions
-        if (preset !== 'all_time') {
-            transactions.forEach(t => {
-                const tDate = parseISO(t.date);
-                if (tDate >= previousPeriodStart && tDate <= previousPeriodEnd) {
-                    if (t.type === TransactionType.INCOME) previousPeriodStats.income += t.amount;
-                    else if (t.type === TransactionType.EXPENSE) previousPeriodStats.expense += t.amount;
-                    else if (t.type === TransactionType.SAVING) previousPeriodStats.saving += t.amount;
-                }
-            });
-        }
+        const currentStats = calculateStats(filtered);
         
-        const calcTrend = (current: number, previous: number) => {
-            if (preset === 'all_time') return 0;
-            if (previous === 0) return current > 0 ? 100 : 0;
-            return ((current - previous) / Math.abs(previous)) * 100;
+        const now = new Date();
+        const lastMonthStart = format(startOfMonth(subMonths(now, 1)), 'yyyy-MM-dd');
+        const lastMonthEnd = format(endOfMonth(subMonths(now, 1)), 'yyyy-MM-dd');
+        const lastMonthTransactions = transactions.filter(t => t.date >= lastMonthStart && t.date <= lastMonthEnd);
+        const lastMonthStats = calculateStats(lastMonthTransactions);
+
+        const getTrend = (curr: number, prev: number) => prev === 0 ? 0 : ((curr - prev) / prev) * 100;
+
+        return { 
+            ...currentStats, 
+            balance: currentStats.income - currentStats.expense, 
+            incomeTrend: getTrend(currentStats.income, lastMonthStats.income), 
+            expenseTrend: getTrend(currentStats.expense, lastMonthStats.expense), 
+            savingTrend: getTrend(currentStats.saving, lastMonthStats.saving), 
+            balanceTrend: getTrend(currentStats.income - currentStats.expense, lastMonthStats.income - lastMonthStats.expense) 
         };
-
-        const currentBalance = currentPeriodStats.income - currentPeriodStats.expense;
-        const previousBalance = previousPeriodStats.income - previousPeriodStats.expense;
-
-        return {
-            income: currentPeriodStats.income,
-            expense: currentPeriodStats.expense,
-            saving: currentPeriodStats.saving,
-            balance: currentBalance,
-            incomeTrend: calcTrend(currentPeriodStats.income, previousPeriodStats.income),
-            expenseTrend: calcTrend(currentPeriodStats.expense, previousPeriodStats.expense),
-            savingTrend: calcTrend(currentPeriodStats.saving, previousPeriodStats.saving),
-            balanceTrend: calcTrend(currentBalance, previousBalance),
-        }
-    }, [filteredTransactions, transactions, filters.dateRange]);
+    }, [filtered, transactions]);
 };
 
-export const useBudgetOverviewData = (): ReportsData['budgetOverviewData'] => {
-    const filteredTransactions = useFilteredTransactions();
-    const { categories } = useAppState();
+export const useNetWorthData = () => {
+    const { transactions, liabilities } = useAppState();
     return useMemo(() => {
-        return categories
-            .filter(c => c.type === CategoryType.EXPENSE && c.budget && c.budget > 0)
-            .map(c => {
-                const spent = filteredTransactions
-                    .filter(t => t.categoryId === c.id && t.type === TransactionType.EXPENSE)
-                    .reduce((sum, t) => sum + t.amount, 0);
-                return { id: c.id, name: c.name, spent, budget: c.budget!, percentage: (spent / c.budget!) * 100 };
-            });
-    }, [filteredTransactions, categories]);
-};
-
-export const useExpensePieChartData = (): ReportsData['expenseDataForPieChart'] => {
-    const filteredTransactions = useFilteredTransactions();
-    const { categories } = useAppState();
-    return useMemo(() => {
-        const categoriesMap = new Map(categories.map(c => [c.id, c]));
-        return Array.from(
-            filteredTransactions
-                .filter(t => t.type === TransactionType.EXPENSE && t.categoryId)
-                .reduce((acc, t) => {
-                    const categoryName = categoriesMap.get(t.categoryId!)?.name || "Unkategorisiert";
-                    acc.set(categoryName, (acc.get(categoryName) || 0) + t.amount);
-                    return acc;
-                }, new Map<string, number>())
-        ).map(([name, value]) => ({ name, value }));
-    }, [filteredTransactions, categories]);
-};
-
-export const useProjectReportData = (): ReportsData['projectReportData'] => {
-    const filteredTransactions = useFilteredTransactions();
-    const { projects } = useAppState();
-    return useMemo(() => {
-        return projects.map(p => {
-            const projectTransactions = filteredTransactions.filter(t => t.tags?.includes(p.tag));
-            const income = projectTransactions.filter(t => t.type === TransactionType.INCOME).reduce((s, t) => s + t.amount, 0);
-            const expense = projectTransactions.filter(t => t.type === TransactionType.EXPENSE).reduce((s, t) => s + t.amount, 0);
-            return {
-                name: p.name,
-                tag: p.tag,
-                profit: income - expense,
-                data: [{ name: 'Einnahmen' as const, value: income }, { name: 'Ausgaben' as const, value: expense }]
+        const months = eachMonthOfInterval({ start: subMonths(new Date(), 11), end: new Date() });
+        return months.map(month => {
+            const dateStr = format(endOfMonth(month), 'yyyy-MM-dd');
+            const assets = transactions.filter(t => t.date <= dateStr).reduce((acc, t) => {
+                if (t.type === TransactionType.INCOME) return acc + t.amount;
+                if (t.type === TransactionType.EXPENSE) return acc - t.amount;
+                if (t.type === TransactionType.SAVING) return acc + t.amount;
+                return acc;
+            }, 0);
+            const debts = (liabilities || []).filter(l => l.type === LiabilityType.DEBT).reduce((acc, l) => acc + (l.initialAmount - l.paidAmount), 0);
+            return { 
+                name: format(month, 'MMM yy', { locale: de }),
+                netWorth: assets - debts,
+                assets,
+                debts
             };
         });
-    }, [filteredTransactions, projects]);
+    }, [transactions, liabilities]);
 };
 
-export const useCashflowData = (): ReportsData['cashflowData'] => {
+export const useComparativeExpenseData = () => {
+    const { transactions, categories } = useAppState();
+    return useMemo(() => {
+        const now = new Date();
+        const prev = subMonths(now, 1);
+        const currentMonthData = transactions.filter(t => isSameMonth(parseISO(t.date), now) && t.type === TransactionType.EXPENSE);
+        const prevMonthData = transactions.filter(t => isSameMonth(parseISO(t.date), prev) && t.type === TransactionType.EXPENSE);
+
+        return (categories || []).filter(c => c.type === CategoryType.EXPENSE).map(cat => {
+            const current = currentMonthData.filter(t => t.categoryId === cat.id).reduce((sum, t) => sum + t.amount, 0);
+            const previous = prevMonthData.filter(t => t.categoryId === cat.id).reduce((sum, t) => sum + t.amount, 0);
+            return {
+                name: cat.name,
+                current,
+                previous,
+                diff: previous > 0 ? ((current - previous) / previous) * 100 : 0
+            };
+        }).filter(item => item.current > 0 || item.previous > 0);
+    }, [transactions, categories]);
+};
+
+export const useExpensePieChartData = () => {
+    const filtered = useFilteredTransactions();
+    const { categories } = useAppState();
+    return useMemo(() => {
+        const map = filtered.filter(t => t.type === TransactionType.EXPENSE).reduce((acc, t) => {
+            const cat = (categories || []).find(c => c.id === t.categoryId)?.name || 'Sonstiges';
+            acc.set(cat, (acc.get(cat) || 0) + t.amount);
+            return acc;
+        }, new Map<string, number>());
+        return Array.from(map).map(([name, value]) => ({ name, value }));
+    }, [filtered, categories]);
+};
+
+export const useCashflowData = () => {
     const { transactions } = useAppState();
     return useMemo(() => {
-        const cashflowData: { month: string, Einnahmen: number, Ausgaben: number }[] = [];
-        const monthMap = new Map<string, { Einnahmen: number, Ausgaben: number }>();
-        const last12Months = Array.from({ length: 12 }).map((_, i) => subMonths(new Date(), i));
-        
-        last12Months.forEach(date => {
-            const monthKey = format(date, 'MMM yy', { locale: de });
-            monthMap.set(monthKey, { Einnahmen: 0, Ausgaben: 0 });
+        const months = eachMonthOfInterval({ start: subMonths(new Date(), 5), end: new Date() });
+        return months.map(m => {
+            const label = format(m, 'MMM', { locale: de });
+            const monthStr = format(m, 'yyyy-MM');
+            const income = transactions.filter(t => t.date.startsWith(monthStr) && t.type === TransactionType.INCOME).reduce((s, t) => s + t.amount, 0);
+            const expense = transactions.filter(t => t.date.startsWith(monthStr) && t.type === TransactionType.EXPENSE).reduce((s, t) => s + t.amount, 0);
+            return { name: label, Einnahmen: income, Ausgaben: expense };
         });
-
-        transactions.forEach(t => {
-            if (parseISO(t.date) > subMonths(new Date(), 12)) {
-                const monthKey = format(parseISO(t.date), 'MMM yy', { locale: de });
-                if (monthMap.has(monthKey)) {
-                    const current = monthMap.get(monthKey)!;
-                    if (t.type === TransactionType.INCOME) current.Einnahmen += t.amount;
-                    if (t.type === TransactionType.EXPENSE) current.Ausgaben += t.amount;
-                }
-            }
-        });
-        
-        monthMap.forEach((value, key) => cashflowData.push({ month: key, ...value }));
-        cashflowData.reverse();
-        return cashflowData;
     }, [transactions]);
 };
 
-export const useSankeyData = (): ReportsData['sankeyData'] => {
-    const filteredTransactions = useFilteredTransactions();
-    const { categories } = useAppState();
+export const useBudgetOverviewData = () => {
+    const { categories, transactions } = useAppState();
+    const now = format(new Date(), 'yyyy-MM');
     return useMemo(() => {
-        const categoriesMap = new Map(categories.map(c => [c.id, c]));
-        const sankeyNodes: { name: string }[] = [];
-        const sankeyLinks: { source: number; target: number; value: number }[] = [];
-        const nodeMap = new Map<string, number>();
-
-        const addNode = (name: string) => {
-            if (!nodeMap.has(name)) {
-                nodeMap.set(name, sankeyNodes.length);
-                sankeyNodes.push({ name });
-            }
-            return nodeMap.get(name)!;
-        };
-
-        const totalIncome = filteredTransactions.filter(t => t.type === TransactionType.INCOME).reduce((sum, t) => sum + t.amount, 0);
-        const incomeNode = addNode("Einkommen");
-
-        filteredTransactions.filter(t => t.type === TransactionType.EXPENSE && t.categoryId).forEach(t => {
-            const categoryName = categoriesMap.get(t.categoryId!)?.name || "Sonstiges";
-            const targetNode = addNode(categoryName);
-            const link = sankeyLinks.find(l => l.source === incomeNode && l.target === targetNode);
-            if (link) {
-                link.value += t.amount;
-            } else {
-                sankeyLinks.push({ source: incomeNode, target: targetNode, value: t.amount });
-            }
+        return (categories || []).filter(c => c.type === CategoryType.EXPENSE && c.budget).map(c => {
+            const spent = transactions.filter(t => t.categoryId === c.id && t.date.startsWith(now)).reduce((sum, t) => sum + t.amount, 0);
+            return { id: c.id, name: c.name, spent, budget: c.budget!, percentage: (spent / c.budget!) * 100 };
         });
-        
-        const totalExpense = sankeyLinks.reduce((sum, l) => sum + l.value, 0);
-        const saving = totalIncome - totalExpense;
-        if(saving > 0) {
-            const savingNode = addNode("Ersparnis");
-            sankeyLinks.push({ source: incomeNode, target: savingNode, value: saving });
-        }
-        return { nodes: sankeyNodes, links: sankeyLinks };
-    }, [filteredTransactions, categories]);
+    }, [categories, transactions, now]);
 };
+
+export const useSankeyData = () => {
+    const { categories, transactions } = useAppState();
+    return useMemo(() => {
+        const nodes = [{ name: 'Einnahmen' }, { name: 'Ausgaben' }];
+        const links: any[] = [];
+        const income = transactions.filter(t => t.type === TransactionType.INCOME).reduce((s, t) => s + t.amount, 0);
+        const expenses = transactions.filter(t => t.type === TransactionType.EXPENSE);
+        
+        if (income > 0) {
+            nodes.push({ name: 'Budget' });
+            links.push({ source: 0, target: 2, value: income });
+            const catMap = new Map<string, number>();
+            expenses.forEach(t => {
+                const cat = (categories || []).find(c => c.id === t.categoryId)?.name || 'Sonstiges';
+                catMap.set(cat, (catMap.get(cat) || 0) + t.amount);
+            });
+            catMap.forEach((val, name) => {
+                nodes.push({ name });
+                links.push({ source: 2, target: nodes.length - 1, value: val });
+            });
+        }
+        return { nodes, links };
+    }, [categories, transactions]);
+};
+
+export const useProjectReportData = () => [];

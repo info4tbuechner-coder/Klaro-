@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { GoogleGenAI } from "@google/genai";
-import { Newspaper, Link as LinkIcon, AlertTriangle, ChevronRight, Clock, RefreshCw } from 'lucide-react';
+import { Newspaper, Link as LinkIcon, Clock, ChevronRight, RefreshCw, WifiOff } from 'lucide-react';
 
 interface GroundingChunk {
     web?: {
@@ -10,269 +10,141 @@ interface GroundingChunk {
     }
 }
 
-const CACHE_KEY = 'klaro-news-cache';
-const QUOTA_LOCKOUT_KEY = 'klaro-news-quota-lockout';
-const CACHE_DURATION = 1000 * 60 * 60 * 4; // 4 hours cache
-const LOCKOUT_DURATION = 1000 * 60 * 60 * 12; // 12 hours lockout on 429
+const CACHE_KEY = 'klaro-news-cache-v2';
+const CACHE_DURATION = 1000 * 60 * 60 * 4;
+
+const NewsSkeleton: React.FC = () => (
+    <div className="glass-card rounded-[2.5rem] p-8 space-y-6 h-[220px]">
+        <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-secondary rounded-2xl shimmer" />
+            <div className="h-4 w-32 bg-secondary rounded-full shimmer" />
+        </div>
+        <div className="space-y-4">
+            <div className="h-4 w-full bg-secondary rounded-lg shimmer" />
+            <div className="h-4 w-[85%] bg-secondary rounded-lg shimmer" />
+            <div className="h-4 w-[60%] bg-secondary rounded-lg shimmer" />
+        </div>
+    </div>
+);
 
 const NewsFeed: React.FC = () => {
     const [headlines, setHeadlines] = useState<string[]>([]);
     const [sources, setSources] = useState<GroundingChunk[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [warning, setWarning] = useState<string | null>(null);
     const [lastUpdated, setLastUpdated] = useState<number | null>(null);
 
-    useEffect(() => {
-        let isMounted = true;
+    const fetchNews = useCallback(async (isRetry = false) => {
+        setIsLoading(true);
+        setError(null);
 
-        const fetchNews = async () => {
-            setIsLoading(true);
-            setError(null);
-            setWarning(null);
-
-            // Load Cache
-            let cachedDataStr = localStorage.getItem(CACHE_KEY);
-            let parsedCache: { timestamp: number; headlines: string[]; sources: GroundingChunk[] } | null = null;
-
-            if (cachedDataStr) {
-                try {
-                    parsedCache = JSON.parse(cachedDataStr);
-                } catch (e) {
-                    console.warn("Failed to parse news cache", e);
-                }
-            }
-
-            // Check Quota Lockout
-            const lockoutStr = localStorage.getItem(QUOTA_LOCKOUT_KEY);
-            if (lockoutStr) {
-                const lockoutUntil = parseInt(lockoutStr, 10);
-                if (Date.now() < lockoutUntil) {
-                    if (isMounted) {
-                        if (parsedCache) {
-                            setHeadlines(parsedCache.headlines);
-                            setSources(parsedCache.sources);
-                            setLastUpdated(parsedCache.timestamp);
-                            setWarning("Tageslimit erreicht. Zeige gespeicherte Nachrichten.");
-                        } else {
-                            setError("Das Tageslimit für Nachrichten ist erreicht. Bitte versuchen Sie es morgen erneut.");
-                        }
-                        setIsLoading(false);
-                    }
-                    return;
-                } else {
-                    localStorage.removeItem(QUOTA_LOCKOUT_KEY);
-                }
-            }
-
-            // 1. Try to use valid Cache
-            if (parsedCache && Date.now() - parsedCache.timestamp < CACHE_DURATION) {
-                if (isMounted) {
-                    setHeadlines(parsedCache.headlines);
-                    setSources(parsedCache.sources);
-                    setLastUpdated(parsedCache.timestamp);
-                    setIsLoading(false);
-                }
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached && !isRetry) {
+            const parsed = JSON.parse(cached);
+            if (Date.now() - parsed.timestamp < CACHE_DURATION) {
+                setHeadlines(parsed.headlines);
+                setSources(parsed.sources);
+                setLastUpdated(parsed.timestamp);
+                setIsLoading(false);
                 return;
             }
+        }
 
-            if (!navigator.onLine) {
-                if (isMounted) {
-                    if (parsedCache) {
-                        setHeadlines(parsedCache.headlines);
-                        setSources(parsedCache.sources);
-                        setLastUpdated(parsedCache.timestamp);
-                        setWarning("Sie sind offline. Zeige gespeicherte Nachrichten.");
-                    } else {
-                        setError("Sie sind offline. Finanznachrichten können nicht geladen werden.");
-                    }
-                    setIsLoading(false);
-                }
-                return;
-            }
+        if (!navigator.onLine) {
+            setError("Offline");
+            setIsLoading(false);
+            return;
+        }
 
-            try {
-                if (!process.env.API_KEY) {
-                    throw new Error("API-Schlüssel nicht gefunden.");
-                }
+        const apiKey = process.env.API_KEY;
+        if (!apiKey) {
+            setError("Key fehlt");
+            setIsLoading(false);
+            return;
+        }
 
-                const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-                
-                // Optimized for faster text generation
-                const response = await ai.models.generateContent({
-                   model: "gemini-3-flash-preview",
-                   contents: "Finde 3-5 hochaktuelle, relevante Schlagzeilen zu Finanzen, Börse oder Inflation in Deutschland/Europa. Gib NUR die Schlagzeilen zurück, jede in einer neuen Zeile. Keine Nummerierung, keine Aufzählungszeichen.",
-                   config: {
-                     tools: [{googleSearch: {}}],
-                   },
-                });
+        try {
+            const ai = new GoogleGenAI({ apiKey });
+            const response = await ai.models.generateContent({
+               model: "gemini-3-flash-preview",
+               contents: "Nenne mir die 3 wichtigsten Schlagzeilen zu Finanzen und Börse in Deutschland von heute. Sei präzise und kurz.",
+               config: {
+                 systemInstruction: "Antworte nur mit Schlagzeilen, eine pro Zeile. Keine Symbole oder Aufzählungszeichen.",
+                 tools: [{googleSearch: {}}],
+               },
+            });
 
-                if (!isMounted) return;
+            const text = response.text || "";
+            const lines = text.split('\n').filter(l => l.trim().length > 5).slice(0, 3);
+            const chunks = (response.candidates?.[0]?.groundingMetadata?.groundingChunks || []) as GroundingChunk[];
 
-                const text = response.text;
-                let lines: string[] = [];
-                if (text) {
-                    lines = text.split('\n')
-                        .map(line => line.trim())
-                        .filter(line => line.length > 0)
-                        .map(line => line.replace(/^[\d\.\-\*•]+\s+/, '')) // Robust cleanup
-                        .slice(0, 5);
-                    
-                    setHeadlines(lines);
-                } else {
-                    setHeadlines([]);
-                }
+            if (lines.length === 0) throw new Error("Keine News gefunden");
 
-                const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-                const validSources = Array.isArray(groundingChunks) ? groundingChunks as GroundingChunk[] : [];
-                setSources(validSources);
-                setLastUpdated(Date.now());
-
-                // Update Cache
-                localStorage.setItem(CACHE_KEY, JSON.stringify({
-                    timestamp: Date.now(),
-                    headlines: lines,
-                    sources: validSources
-                }));
-
-            } catch (err: any) {
-                if (isMounted) {
-                    // Robust error message detection for quota limits
-                    const errString = JSON.stringify(err);
-                    const errMsg = err.message || '';
-                    const isQuotaError = 
-                        errString.includes('429') || 
-                        errMsg.includes('429') || 
-                        errString.includes('RESOURCE_EXHAUSTED') || 
-                        errMsg.includes('Quota exceeded');
-
-                    if (isQuotaError) {
-                        console.warn("News Feed Quota Exceeded. Locking out for 12h.");
-                        localStorage.setItem(QUOTA_LOCKOUT_KEY, (Date.now() + LOCKOUT_DURATION).toString());
-                    } else {
-                        console.error("News Feed Error:", err);
-                    }
-
-                    if (parsedCache) {
-                        // Fallback to stale cache
-                        setHeadlines(parsedCache.headlines);
-                        setSources(parsedCache.sources);
-                        setLastUpdated(parsedCache.timestamp);
-                        setWarning(isQuotaError 
-                            ? "Tageslimit erreicht. Zeige gespeicherte Nachrichten." 
-                            : "Aktualisierung fehlgeschlagen. Zeige gespeicherte Nachrichten.");
-                    } else {
-                        if (isQuotaError) {
-                            setError("Das Limit für Live-Nachrichten wurde erreicht. Bitte versuchen Sie es später erneut.");
-                        } else {
-                            setError("Nachrichten konnten nicht geladen werden.");
-                        }
-                    }
-                }
-            } finally {
-                if (isMounted) {
-                    setIsLoading(false);
-                }
-            }
-        };
-
-        fetchNews();
-
-        return () => {
-            isMounted = false;
-        };
+            setHeadlines(lines);
+            setSources(chunks);
+            setLastUpdated(Date.now());
+            localStorage.setItem(CACHE_KEY, JSON.stringify({ timestamp: Date.now(), headlines: lines, sources: chunks }));
+        } catch (err) {
+            setError("Fehler beim Laden");
+        } finally {
+            setIsLoading(false);
+        }
     }, []);
 
-    const renderContent = () => {
-        if (isLoading) {
-            return (
-                <div className="space-y-3 animate-pulse">
-                    {[...Array(3)].map((_, i) => (
-                        <div key={i} className="flex gap-3">
-                            <div className="h-5 w-5 bg-secondary rounded-full flex-shrink-0" />
-                            <div className="h-5 bg-secondary rounded w-3/4" />
-                        </div>
-                    ))}
+    useEffect(() => {
+        fetchNews();
+    }, [fetchNews]);
+
+    if (isLoading) return <NewsSkeleton />;
+
+    return (
+        <section className="glass-card rounded-[2.5rem] p-8 border border-white/5 relative overflow-hidden group min-h-[220px] transition-all duration-500">
+            <div className="flex items-center justify-between mb-8 relative z-10">
+                <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-primary/10 rounded-2xl text-primary"><Newspaper size={20} /></div>
+                    <h2 className="text-sm font-black uppercase tracking-widest text-foreground/60">Markt-Update</h2>
                 </div>
-            );
-        }
-
-        if (error) {
-            return (
-                <div className="flex items-center gap-2 text-destructive bg-destructive/10 p-3 rounded-lg text-sm">
-                    <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-                    <span>{error}</span>
+                <div className="flex items-center gap-4">
+                    {lastUpdated && <div className="text-[9px] font-black text-muted-foreground uppercase opacity-40 flex items-center gap-1"><Clock size={10}/> {new Date(lastUpdated).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>}
+                    <button 
+                        onClick={() => {
+                            if (navigator.vibrate) navigator.vibrate(10);
+                            fetchNews(true);
+                        }}
+                        className="p-2 rounded-xl bg-secondary/30 hover:bg-primary/20 text-muted-foreground hover:text-primary transition-all active:rotate-180 duration-500"
+                        aria-label="Aktualisieren"
+                    >
+                        <RefreshCw size={14} />
+                    </button>
                 </div>
-            );
-        }
+            </div>
 
-        if (headlines.length === 0) {
-            return <p className="text-sm text-muted-foreground italic">Keine aktuellen Nachrichten gefunden.</p>;
-        }
-
-        return (
-            <div className="space-y-4">
-                {warning && (
-                    <div className="flex items-center gap-2 text-yellow-600 bg-yellow-500/10 p-2 rounded-lg text-xs mb-2 border border-yellow-500/20">
-                        <RefreshCw className="h-3 w-3 flex-shrink-0" />
-                        <span>{warning}</span>
-                    </div>
-                )}
-                <ul className="space-y-2">
-                    {headlines.map((headline, index) => (
-                        <li key={index} className="group flex items-start gap-2 text-sm text-foreground/90 hover:text-primary transition-colors cursor-default">
-                            <ChevronRight className="h-4 w-4 mt-0.5 text-primary/60 group-hover:text-primary transition-colors flex-shrink-0" />
-                            <span>{headline}</span>
+            {error ? (
+                <div className="flex flex-col items-center justify-center py-6 text-center animate-in">
+                    <div className="mb-4 text-rose-500/40"><WifiOff size={32} /></div>
+                    <p className="text-xs text-muted-foreground/60 font-bold italic mb-2">{error === 'Offline' ? 'Keine Internetverbindung' : error}</p>
+                    <p className="text-[9px] uppercase tracking-widest opacity-30">News benötigen Online-Zugang</p>
+                </div>
+            ) : (
+                <ul className="space-y-4 relative z-10">
+                    {headlines.map((h, i) => (
+                        <li key={i} className="flex gap-3 group/item animate-in" style={{ animationDelay: `${i * 100}ms` }}>
+                            <ChevronRight size={14} className="mt-1 text-primary/40 group-hover/item:text-primary transition-colors flex-shrink-0" />
+                            <span className="text-sm font-bold leading-relaxed text-foreground/80 group-hover:text-foreground transition-colors">{h}</span>
                         </li>
                     ))}
                 </ul>
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-border/20">
-                    {sources.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                            {sources.map((source, index) => (
-                                source.web && (
-                                    <a
-                                        key={index}
-                                        href={source.web.uri}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-secondary hover:bg-primary/10 text-muted-foreground hover:text-primary transition-all"
-                                        title={source.web.title}
-                                    >
-                                        <LinkIcon size={10} />
-                                        <span className="truncate max-w-[120px]">{new URL(source.web.uri).hostname.replace('www.','')}</span>
-                                    </a>
-                                )
-                            ))}
-                        </div>
-                    )}
-                    {lastUpdated && (
-                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground ml-auto">
-                            <Clock size={10} />
-                            <span>{new Date(lastUpdated).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                        </div>
-                    )}
-                </div>
-            </div>
-        );
-    };
+            )}
 
-    return (
-        <section className="glass-card rounded-2xl p-5">
-            <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                    <div className="p-2 bg-primary/10 rounded-lg text-primary">
-                        <Newspaper className="h-5 w-5" />
-                    </div>
-                    <h2 className="font-bold text-lg">Markt-Update</h2>
+            {sources.length > 0 && !error && (
+                <div className="flex gap-2 mt-8 pt-6 border-t border-border/20 overflow-x-auto no-scrollbar relative z-10">
+                    {sources.map((s, i) => s.web && (
+                        <a key={i} href={s.web.uri} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary/50 rounded-xl text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:bg-primary/10 hover:text-primary transition-all whitespace-nowrap active:scale-95">
+                            <LinkIcon size={10} /> {new URL(s.web.uri).hostname.replace('www.', '')}
+                        </a>
+                    ))}
                 </div>
-                {!isLoading && !error && !warning && (
-                    <span className="text-xs px-2 py-1 rounded-full bg-success/10 text-success font-medium">
-                        Live
-                    </span>
-                )}
-            </div>
-            {renderContent()}
+            )}
         </section>
     );
 };

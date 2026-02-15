@@ -1,7 +1,10 @@
+
 import React from 'react';
 import { useAppState, useAppDispatch } from '../context/AppContext';
 import { X, AlertTriangle, Trash2, RefreshCw } from 'lucide-react';
 import { Button } from './ui';
+
+const STORAGE_KEY = 'klaro-v5-master';
 
 const DebugPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const state = useAppState();
@@ -9,7 +12,7 @@ const DebugPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
     const handleClearStorage = () => {
         if (window.confirm('Sind Sie sicher, dass Sie den gesamten lokalen Speicher löschen möchten? Die App wird neu geladen.')) {
-            localStorage.removeItem('klaro-state');
+            localStorage.removeItem(STORAGE_KEY);
             window.location.reload();
         }
     };

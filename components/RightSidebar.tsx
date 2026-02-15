@@ -1,14 +1,13 @@
 
-
 import React, { useState, useMemo, useRef, useCallback, useEffect, memo } from 'react';
 import { useAppState, useExpensePieChartData, useCashflowData, useProjectReportData, useAppDispatch } from '../context/AppContext';
 import { Target, Briefcase, BarChartHorizontal, FileDown, TrendingUp, CreditCard } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Bar, XAxis, YAxis, Tooltip, Legend, BarChart, CartesianGrid, ComposedChart } from 'recharts';
-import { formatCurrency } from '../utils';
+import { formatCurrency, formatCompactNumber } from '../utils';
 import { LiabilityType } from '../types';
 import { BudgetOverview } from './Dashboard';
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#AF19FF', '#FF4560'];
+const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 
 interface TooltipPayload {
   name: string;
@@ -17,14 +16,15 @@ interface TooltipPayload {
   fill?: string;
 }
 
-const CustomTooltip = ({ active, payload, label }: { active?: boolean, payload?: TooltipPayload[], label?: string | number }) => {
+const CustomTooltip = ({ active, payload, label, currency, language }: { active?: boolean, payload?: TooltipPayload[], label?: string | number, currency: string, language: string }) => {
     if (active && Array.isArray(payload) && payload.length) {
       return (
-        <div className="p-3 glass-card text-sm rounded-lg shadow-lg">
-           <p className="font-bold mb-1">{label}</p>
+        <div className="p-3 glass-card text-sm rounded-lg shadow-lg border border-white/10 bg-background/90 backdrop-blur-md">
+           <p className="font-bold mb-1 text-xs uppercase tracking-widest opacity-40">{label}</p>
            {payload.map((pld, index) => (
-             <div key={index} style={{ color: pld.fill }}>
-               <p>{`${pld.name}: ${formatCurrency(pld.value)}`}</p>
+             <div key={index} className="flex items-center gap-2">
+               <div className="w-2 h-2 rounded-full" style={{ backgroundColor: pld.fill }}></div>
+               <p className="font-bold">{`${pld.name}: ${formatCurrency(pld.value, currency, language)}`}</p>
              </div>
            ))}
         </div>
@@ -39,12 +39,15 @@ interface PieTooltipPayload extends TooltipPayload {
     };
 }
   
-const PieTooltip = ({ active, payload }: { active?: boolean; payload?: PieTooltipPayload[] }) => {
+const PieTooltip = ({ active, payload, currency, language }: { active?: boolean; payload?: PieTooltipPayload[]; currency: string; language: string }) => {
     if (active && Array.isArray(payload) && payload.length) {
         const data = payload[0];
         return (
-            <div className="p-3 glass-card text-sm rounded-lg shadow-lg">
-                <p className="label">{`${data.name} : ${formatCurrency(data.value)} (${data.payload.percent.toFixed(0)}%)`}</p>
+            <div className="p-3 glass-card text-sm rounded-lg shadow-lg border border-white/10 bg-background/90 backdrop-blur-md">
+                <p className="font-bold flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: data.fill }}></div>
+                    {`${data.name}: ${formatCurrency(data.value, currency, language)} (${data.payload.percent.toFixed(0)}%)`}
+                </p>
             </div>
         );
     }
@@ -52,6 +55,7 @@ const PieTooltip = ({ active, payload }: { active?: boolean; payload?: PieToolti
 };
 
 const MonthlyReport = memo(() => {
+    const { userProfile } = useAppState();
     const expenseDataForPieChart = useExpensePieChartData();
     const totalExpenses = useMemo(() => expenseDataForPieChart.reduce((sum, item) => sum + item.value, 0), [expenseDataForPieChart]);
     const dataWithPercent = useMemo(() => expenseDataForPieChart.map(item => ({...item, percent: totalExpenses > 0 ? (item.value / totalExpenses) * 100 : 0})), [expenseDataForPieChart, totalExpenses]);
@@ -59,24 +63,34 @@ const MonthlyReport = memo(() => {
     return (
         <div className="space-y-6">
             <div id="chart-pie-container">
-                <h4 className="font-semibold mb-2">Ausgaben nach Kategorie</h4>
+                <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/30 mb-6">Ausgaben Mix</h4>
                 {dataWithPercent.length > 0 ? (
                     <div style={{ width: '100%', height: 200 }}>
                         <ResponsiveContainer>
                             <PieChart>
-                                <Pie data={dataWithPercent} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} fill="#8884d8" labelLine={false}>
+                                <Pie 
+                                    data={dataWithPercent} 
+                                    dataKey="value" 
+                                    nameKey="name" 
+                                    cx="50%" 
+                                    cy="50%" 
+                                    innerRadius={50}
+                                    outerRadius={80} 
+                                    stroke="none"
+                                    paddingAngle={5}
+                                >
                                     {dataWithPercent.map((entry, index) => (
                                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                     ))}
                                 </Pie>
-                                <Tooltip content={<PieTooltip />} />
+                                <Tooltip content={<PieTooltip currency={userProfile.currency} language={userProfile.language} />} />
                             </PieChart>
                         </ResponsiveContainer>
                     </div>
-                ) : <p className="text-sm text-muted-foreground">Keine Ausgabendaten für diesen Zeitraum.</p>}
+                ) : <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/20 text-center py-10">Keine Daten vorhanden</p>}
             </div>
              <div>
-                <h4 className="font-semibold mb-2">Budgetübersicht</h4>
+                <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/30 mb-6">Budget Status</h4>
                 <BudgetOverview />
             </div>
         </div>
@@ -84,25 +98,26 @@ const MonthlyReport = memo(() => {
 });
 
 const CashflowAnalysis = memo(() => {
+    const { userProfile } = useAppState();
     const cashflowData = useCashflowData();
 
     if (cashflowData.every(d => d.Einnahmen === 0 && d.Ausgaben === 0)) {
-        return <p className="text-sm text-muted-foreground text-center py-8">Nicht genügend Daten für eine Cashflow-Analyse vorhanden.</p>
+        return <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/20 text-center py-20">Analysedaten werden gesammelt...</p>
     }
 
     return (
         <div id="chart-cashflow-container">
-            <h4 className="font-semibold mb-4">Cashflow der letzten 12 Monate</h4>
+            <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/30 mb-8">Geldfluss Historie</h4>
              <div style={{ width: '100%', height: 250 }}>
                 <ResponsiveContainer>
-                    <ComposedChart data={cashflowData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
-                        <XAxis dataKey="month" fontSize={12} tickLine={false} axisLine={false} />
-                        <YAxis fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `€${Number(value)/1000}k`} />
-                        <Tooltip content={<CustomTooltip />} cursor={{ fill: 'hsl(var(--secondary))' }}/>
-                        <Legend wrapperStyle={{fontSize: "12px"}} />
-                        <Bar dataKey="Einnahmen" fill="hsl(var(--success))" barSize={20} />
-                        <Bar dataKey="Ausgaben" fill="hsl(var(--warning))" barSize={20} />
+                    <ComposedChart data={cashflowData} margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.05} vertical={false} />
+                        <XAxis dataKey="name" fontSize={9} fontWeight="bold" tickLine={false} axisLine={false} dy={10} />
+                        <YAxis fontSize={9} fontWeight="bold" tickLine={false} axisLine={false} tickFormatter={(value) => formatCompactNumber(value, userProfile.currency, userProfile.language)} />
+                        <Tooltip content={<CustomTooltip currency={userProfile.currency} language={userProfile.language} />} cursor={{ fill: 'rgba(255,255,255,0.03)' }}/>
+                        <Legend wrapperStyle={{fontSize: "9px", fontWeight: "bold", paddingTop: "20px"}} iconType="circle" />
+                        <Bar dataKey="Einnahmen" fill="#10b981" radius={[4, 4, 0, 0]} barSize={12} />
+                        <Bar dataKey="Ausgaben" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={12} />
                     </ComposedChart>
                 </ResponsiveContainer>
             </div>
@@ -111,6 +126,7 @@ const CashflowAnalysis = memo(() => {
 });
 
 const ProjectTracker = memo(() => {
+    const { userProfile } = useAppState();
     const projectReportData = useProjectReportData();
 
     return (
@@ -119,25 +135,25 @@ const ProjectTracker = memo(() => {
                 <div key={p.name}>
                     <div className="flex justify-between items-baseline mb-2">
                         <h4 className="font-semibold text-sm">{p.name}</h4>
-                        <span className={`font-bold text-lg ${p.profit >= 0 ? 'text-success' : 'text-destructive'}`}>{formatCurrency(p.profit)}</span>
+                        <span className={`font-bold text-lg ${p.profit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{formatCurrency(p.profit, userProfile.currency, userProfile.language)}</span>
                     </div>
                      <div style={{ width: '100%', height: 150 }}>
                         <ResponsiveContainer>
                             <BarChart data={p.data} layout="vertical" margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.5)" />
-                                <XAxis type="number" tickFormatter={(value) => formatCurrency(value as number)} fontSize={12} />
-                                <YAxis type="category" dataKey="name" width={80} fontSize={12} />
-                                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'hsl(var(--secondary))' }}/>
-                                <Bar dataKey="value" barSize={20}>
+                                <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.05} />
+                                <XAxis type="number" tickFormatter={(value) => formatCompactNumber(value as number, userProfile.currency, userProfile.language)} fontSize={10} />
+                                <YAxis type="category" dataKey="name" width={80} fontSize={10} />
+                                <Tooltip content={<CustomTooltip currency={userProfile.currency} language={userProfile.language} />} cursor={{ fill: 'rgba(255,255,255,0.03)' }}/>
+                                <Bar dataKey="value" barSize={16}>
                                      {p.data.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={index === 0 ? 'hsl(var(--success))' : 'hsl(var(--warning))'} />
+                                        <Cell key={`cell-${index}`} fill={index === 0 ? '#10b981' : '#f59e0b'} radius={[0, 4, 4, 0]} />
                                     ))}
                                 </Bar>
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
                 </div>
-            )) : <p className="text-sm text-muted-foreground">Noch keine Projekte angelegt.</p>}
+            )) : <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/20 text-center py-20">Keine Business-Projekte</p>}
         </div>
     )
 });
@@ -151,7 +167,7 @@ const CircularProgress: React.FC<{ percentage: number; size?: number; strokeWidt
         <div className="relative" style={{ width: size, height: size }}>
             <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90">
                 <circle
-                    className="stroke-secondary"
+                    className="stroke-secondary/20"
                     fill="transparent"
                     strokeWidth={strokeWidth}
                     r={radius}
@@ -168,11 +184,11 @@ const CircularProgress: React.FC<{ percentage: number; size?: number; strokeWidt
                     r={radius}
                     cx={size / 2}
                     cy={size / 2}
-                    style={{ transition: 'stroke-dashoffset 0.5s ease-out' }}
+                    style={{ transition: 'stroke-dashoffset 0.8s ease-out' }}
                 />
             </svg>
              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-xs font-bold text-foreground">
+                <span className="text-[10px] font-black text-foreground">
                     {`${Math.round(percentage)}%`}
                 </span>
             </div>
@@ -181,7 +197,7 @@ const CircularProgress: React.FC<{ percentage: number; size?: number; strokeWidt
 };
 
 const GoalTracker = memo(() => {
-    const { goals } = useAppState();
+    const { goals, userProfile } = useAppState();
     return (
         <div className="space-y-4">
             {goals.length > 0 ? goals.map(goal => {
@@ -190,34 +206,33 @@ const GoalTracker = memo(() => {
                 const isGoalReached = currentAmount >= targetAmount;
 
                 return (
-                     <div key={goal.id} className="flex items-center gap-4 p-2 rounded-lg hover:bg-secondary/30 transition-colors duration-200">
+                     <div key={goal.id} className="flex items-center gap-6 p-6 rounded-[2rem] bg-secondary/10 border border-white/5 hover:bg-secondary/20 transition-all duration-500 group">
                         <div className="flex-shrink-0">
                             <CircularProgress percentage={percentage} />
                         </div>
                         <div className="flex-grow overflow-hidden">
-                            <p className="font-semibold text-sm truncate">{name}</p>
+                            <p className="font-bold text-sm tracking-tight group-hover:text-primary transition-colors">{name}</p>
                             {isGoalReached ? (
-                                <p className="font-bold text-success text-sm">🎉 Ziel erreicht!</p>
+                                <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mt-1">Abgeschlossen</p>
                             ) : (
-                                <p className="text-xs text-muted-foreground">
-                                    <span className="font-semibold text-foreground">{formatCurrency(currentAmount)}</span>
-                                    {' '} von {formatCurrency(targetAmount)}
+                                <p className="text-[10px] font-black text-muted-foreground/30 uppercase tracking-widest mt-1">
+                                    {formatCurrency(currentAmount, userProfile.currency, userProfile.language)} / {formatCurrency(targetAmount, userProfile.currency, userProfile.language)}
                                 </p>
                             )}
                         </div>
                     </div>
                 );
-            }) : <p className="text-sm text-muted-foreground text-center py-8">Noch keine Ziele angelegt.</p>}
+            }) : <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/20 text-center py-20">Keine Sparziele</p>}
         </div>
     );
 });
 
 const LiabilityTracker = memo(() => {
-    const { liabilities } = useAppState();
+    const { liabilities, userProfile } = useAppState();
     const dispatch = useAppDispatch();
     
     if (liabilities.length === 0) {
-        return <p className="text-sm text-muted-foreground text-center py-8">Keine Schulden oder Forderungen angelegt.</p>;
+        return <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/20 text-center py-20">Schuldenfrei</p>;
     }
     
     return (
@@ -225,24 +240,23 @@ const LiabilityTracker = memo(() => {
             {liabilities.map(l => {
                  const progress = l.initialAmount > 0 ? (l.paidAmount / l.initialAmount) * 100 : 100;
                  return (
-                    <div key={l.id}>
-                        <div className="flex justify-between items-center mb-2">
-                            <h4 className="font-semibold text-sm">{l.name}</h4>
-                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${l.type === LiabilityType.DEBT ? 'bg-destructive/10 text-destructive' : 'bg-success/10 text-success'}`}>{l.type === LiabilityType.DEBT ? 'Schuld' : 'Forderung'}</span>
+                    <div key={l.id} className="p-6 rounded-[2rem] bg-secondary/10 border border-white/5">
+                        <div className="flex justify-between items-center mb-4">
+                            <h4 className="font-bold text-sm">{l.name}</h4>
+                            <span className={`text-[8px] font-black uppercase tracking-widest px-3 py-1 rounded-full ${l.type === LiabilityType.DEBT ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500'}`}>{l.type === LiabilityType.DEBT ? 'Schuld' : 'Forderung'}</span>
                         </div>
-                        <div className="w-full bg-secondary rounded-full h-4">
-                            <div className="bg-primary h-4 rounded-full flex items-center justify-end px-2 transition-all duration-500" style={{ width: `${progress}%` }}>
-                                {progress > 15 && <span className="text-xs font-bold text-primary-foreground">{Math.floor(progress)}%</span>}
-                            </div>
+                        <div className="w-full bg-background/50 rounded-full h-2 overflow-hidden border border-white/5">
+                            <div className="bg-primary h-full rounded-full transition-all duration-1000 shadow-[0_0_10px_rgba(var(--primary),0.3)]" style={{ width: `${progress}%` }}></div>
                         </div>
-                        <div className="flex justify-between text-xs mt-1 text-muted-foreground">
-                            <span>{formatCurrency(l.paidAmount)} / {formatCurrency(l.initialAmount)}</span>
+                        <div className="flex justify-between text-[10px] font-black uppercase tracking-widest mt-3 text-muted-foreground/30">
+                            <span>{formatCurrency(l.paidAmount, userProfile.currency, userProfile.language)} getilgt</span>
+                            <span>{Math.floor(progress)}%</span>
                         </div>
                     </div>
                 );
             })}
              {liabilities.some(l => l.type === LiabilityType.DEBT && (l.initialAmount - l.paidAmount > 0)) && (
-                 <button onClick={() => dispatch({ type: 'OPEN_MODAL', payload: { type: 'DEBT_PAYDOWN' } })} className="w-full text-center py-2 mt-4 px-4 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary/90">
+                 <button onClick={() => dispatch({ type: 'OPEN_MODAL', payload: { type: 'DEBT_PAYDOWN' } })} className="w-full text-center py-6 mt-4 px-4 bg-primary text-primary-foreground rounded-[2rem] font-black uppercase text-[10px] tracking-widest hover:scale-[1.02] active:scale-95 transition-all shadow-xl shadow-primary/20">
                     Tilgungsplan erstellen
                  </button>
              )}
@@ -276,7 +290,6 @@ const RightSidebar: React.FC = () => {
 
     const handleExport = useCallback(() => {
         if (containerRef.current) {
-            // Find specific chart containers based on active tab to avoid grabbing icons
             const containerId = 
                 activeTab === 'Bericht' ? '#chart-pie-container' :
                 activeTab === 'Cashflow' ? '#chart-cashflow-container' :
@@ -303,36 +316,38 @@ const RightSidebar: React.FC = () => {
     }, [activeTab]);
     
     return (
-        <aside className="sticky top-24 space-y-6">
-            <div className="glass-card rounded-2xl p-4">
-                 <div className="flex justify-between items-center mb-4">
-                    <div className="p-1 bg-secondary rounded-xl flex items-center flex-wrap">
+        <aside className="sticky top-32 space-y-6">
+            <div className="glass-card rounded-[3.5rem] p-8 border border-white/5">
+                 <div className="flex justify-between items-center mb-10">
+                    <div className="p-1.5 bg-secondary/30 rounded-[2rem] flex items-center flex-wrap gap-1">
                         {TABS.map(tab => (
                             <button
                                 key={tab.name}
-                                onClick={() => setActiveTab(tab.name)}
-                                className={`flex-1 whitespace-nowrap py-2 px-3 text-sm font-semibold flex items-center justify-center rounded-lg transition-colors
+                                onClick={() => {
+                                    if (navigator.vibrate) navigator.vibrate(5);
+                                    setActiveTab(tab.name);
+                                }}
+                                className={`flex-1 whitespace-nowrap py-3 px-4 text-[9px] font-black uppercase tracking-widest flex items-center justify-center rounded-[1.25rem] transition-all
                                 ${activeTab === tab.name
-                                    ? 'bg-card shadow-sm text-primary'
-                                    : 'text-muted-foreground hover:text-foreground'
+                                    ? 'bg-background shadow-xl text-primary scale-[1.05]'
+                                    : 'text-muted-foreground/30 hover:text-foreground'
                                 }`}
+                                title={tab.name}
                             >
-                                <tab.icon className="mr-2 h-5 w-5"/>
-                                {tab.name}
+                                <tab.icon size={16}/>
                             </button>
                         ))}
                     </div>
                     <button
                         onClick={handleExport}
                         disabled={!isExportable}
-                        className="p-2 rounded-md text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-                        aria-label="Diagramm exportieren"
-                        title={isExportable ? "Als SVG exportieren" : "Kein exportierbares Diagramm"}
+                        className="p-4 rounded-2xl bg-secondary/20 text-muted-foreground/20 hover:text-primary disabled:opacity-5 disabled:cursor-not-allowed transition-all"
+                        aria-label="Export"
                     >
-                        <FileDown className="h-5 w-5" />
+                        <FileDown size={20} />
                     </button>
                 </div>
-                <div ref={containerRef} className="p-2">
+                <div ref={containerRef} className="animate-in">
                     <ActiveComponent />
                 </div>
             </div>

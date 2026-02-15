@@ -25,8 +25,8 @@ export enum Frequency {
 }
 
 export enum LiabilityType {
-  DEBT = 'debt', // Schulden, die ich habe
-  LOAN = 'loan', // Forderung, die ich an andere habe
+  DEBT = 'debt',
+  LOAN = 'loan',
 }
 
 export interface Transaction {
@@ -34,7 +34,7 @@ export interface Transaction {
   type: TransactionType;
   amount: number;
   description: string;
-  date: string; // YYYY-MM-DD
+  date: string;
   categoryId?: string;
   goalId?: string;
   tags?: string[];
@@ -62,11 +62,11 @@ export interface Liability {
   type: LiabilityType;
   initialAmount: number;
   paidAmount: number;
-  interestRate: number; // Annual interest rate in percent, e.g., 5 for 5%
-  creditor?: string; // For DEBT
-  debtor?: string;   // For LOAN
-  startDate: string; // YYYY-MM-DD
-  dueDate?: string; // YYYY-MM-DD
+  interestRate: number;
+  creditor?: string;
+  debtor?: string;
+  startDate: string;
+  dueDate?: string;
 }
 
 export interface RecurringTransaction {
@@ -78,9 +78,9 @@ export interface RecurringTransaction {
   goalId?: string;
   frequency: Frequency;
   interval: number;
-  startDate: string; // YYYY-MM-DD
-  endDate?: string; // YYYY-MM-DD
-  nextDueDate: string; // YYYY-MM-DD
+  startDate: string;
+  endDate?: string;
+  nextDueDate: string;
   isBill?: boolean;
 }
 
@@ -110,7 +110,7 @@ export interface DashboardStats {
     balanceTrend: number;
 }
 
-export type Theme = 'grandeur' | 'synthwave' | 'blockchain' | 'neon' | 'forest';
+export type Theme = 'grandeur' | 'synthwave' | 'blockchain' | 'neon' | 'forest' | 'onyx';
 
 export type ViewMode = 'all' | 'private' | 'business';
 
@@ -135,38 +135,30 @@ export interface Filters {
     categoryStatus: 'all' | 'categorized' | 'uncategorized';
 }
 
-export interface ReportsData {
-    budgetOverviewData: {
-        id: string;
-        name: string;
-        spent: number;
-        budget: number;
-        percentage: number;
-    }[];
-    expenseDataForPieChart: { name: string, value: number }[];
-    projectReportData: {
-        name: string;
-        tag: string;
-        profit: number;
-        data: {
-            name: 'Einnahmen' | 'Ausgaben';
-            value: number;
-        }[];
-    }[];
-    cashflowData: {
-        month: string;
-        Einnahmen: number;
-        Ausgaben: number;
-    }[];
-    sankeyData: {
-        nodes: { name: string }[];
-        links: { source: number; target: number; value: number }[];
-    };
+export type SyncStatus = 'idle' | 'syncing' | 'success' | 'error';
+
+export interface AppState {
+    userProfile: UserProfile;
+    transactions: Transaction[];
+    categories: Category[];
+    goals: Goal[];
+    projects: Project[];
+    recurringTransactions: RecurringTransaction[];
+    liabilities: Liability[];
+    theme: Theme;
+    viewMode: ViewMode;
+    filters: Filters;
+    isSubscribed: boolean;
+    activeModal: ModalType | null;
+    selectedTransactions: Set<string>;
+    debugMode: boolean;
+    syncStatus: SyncStatus;
+    lastSyncAt: string | null;
+    onboardingComplete: boolean;
 }
 
-
 export type ModalType =
-  | { type: 'ADD_TRANSACTION' }
+  | { type: 'ADD_TRANSACTION'; data?: { initialData?: Partial<Transaction> } }
   | { type: 'EDIT_TRANSACTION'; data: { transaction: Transaction } }
   | { type: 'VIEW_TRANSACTION'; data: { transaction: Transaction } }
   | { type: 'SMART_SCAN' }
@@ -187,24 +179,6 @@ export type ModalType =
   | { type: 'USER_PROFILE' }
   | { type: 'ANALYSIS' };
 
-// FIX: Define AppState interface here so it can be used in the Action type.
-export interface AppState {
-    userProfile: UserProfile;
-    transactions: Transaction[];
-    categories: Category[];
-    goals: Goal[];
-    projects: Project[];
-    recurringTransactions: RecurringTransaction[];
-    liabilities: Liability[];
-    theme: Theme;
-    viewMode: ViewMode;
-    filters: Filters;
-    isSubscribed: boolean;
-    activeModal: ModalType | null;
-    selectedTransactions: Set<string>;
-    debugMode: boolean;
-}
-
 export type Action =
     | { type: 'SET_THEME'; payload: Theme }
     | { type: 'SET_VIEW_MODE'; payload: ViewMode }
@@ -215,29 +189,19 @@ export type Action =
     | { type: 'UPDATE_TRANSACTION'; payload: Transaction }
     | { type: 'DELETE_TRANSACTIONS'; payload: string[] }
     | { type: 'CATEGORIZE_TRANSACTIONS'; payload: { ids: string[]; categoryId: string } }
-    | { type: 'MERGE_TRANSACTIONS'; payload: { transactionIds: string[]; newDescription: string } }
     | { type: 'ADD_CATEGORY'; payload: Omit<Category, 'id'> }
     | { type: 'UPDATE_CATEGORY'; payload: Category }
     | { type: 'DELETE_CATEGORY'; payload: string }
-    | { type: 'DELETE_UNUSED_CATEGORIES' }
-    | { type: 'REORDER_CATEGORIES'; payload: Category[] }
     | { type: 'ADD_GOAL'; payload: Omit<Goal, 'id' | 'currentAmount'> }
     | { type: 'UPDATE_GOAL'; payload: Goal }
     | { type: 'DELETE_GOAL'; payload: string }
     | { type: 'ADD_PROJECT'; payload: Omit<Project, 'id'> }
-    | { type: 'UPDATE_PROJECT'; payload: Project }
-    | { type: 'DELETE_PROJECT'; payload: string }
-    | { type: 'ADD_RECURRING'; payload: Omit<RecurringTransaction, 'id' | 'nextDueDate'> }
-    | { type: 'UPDATE_RECURRING'; payload: RecurringTransaction }
-    | { type: 'DELETE_RECURRING'; payload: string }
-    | { type: 'ADD_LIABILITY'; payload: Omit<Liability, 'id' | 'paidAmount'> }
-    | { type: 'UPDATE_LIABILITY'; payload: Liability }
-    | { type: 'DELETE_LIABILITY'; payload: string }
     | { type: 'IMPORT_DATA'; payload: Partial<AppState> }
     | { type: 'OPEN_MODAL'; payload: ModalType }
     | { type: 'CLOSE_MODAL' }
-    // FIX: Changed React.SetStateAction to SetStateAction to align with the new import.
     | { type: 'SET_SELECTED_TRANSACTIONS'; payload: SetStateAction<Set<string>> }
     | { type: 'RESET_STATE' }
-    | { type: 'CLEAR_ALL_DATA' }
-    | { type: 'TOGGLE_DEBUG_MODE' };
+    | { type: 'TOGGLE_DEBUG_MODE' }
+    | { type: 'SET_SYNC_STATUS'; payload: SyncStatus }
+    | { type: 'SYNC_COMPLETED'; payload: string }
+    | { type: 'COMPLETE_ONBOARDING' };
