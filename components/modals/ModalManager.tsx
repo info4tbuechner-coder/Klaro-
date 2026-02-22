@@ -2,7 +2,7 @@
 import React, { useState, memo, useMemo, useEffect, useRef } from 'react';
 import { useAppState, useAppDispatch, useNetWorthData } from '../../context/AppContext';
 import { Transaction, TransactionType } from '../../types';
-import { TrendingUp, Wallet, ArrowRightLeft, PieChart as PieIcon, Plus, Trash2, Edit2, Camera, Calendar, Tag as TagIcon, Download, Upload, LogOut, Smartphone, Heart, WifiOff, AlertCircle, ShieldCheck, Database, Globe, RefreshCw, BrainCircuit } from 'lucide-react';
+import { TrendingUp, Wallet, ArrowRightLeft, PieChart as PieIcon, Plus, Trash2, Edit2, Camera, Calendar, Tag as TagIcon, Download, Upload, LogOut, Smartphone, Heart, WifiOff, AlertCircle, ShieldCheck, Database, Globe, RefreshCw, BrainCircuit, CameraOff } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { formatCurrency, formatDate, formatCompactNumber } from '../../utils';
 import { format } from 'date-fns/format';
@@ -174,23 +174,58 @@ const UserProfileModal: React.FC = memo(() => {
 const SmartScanModal: React.FC = memo(() => {
     const dispatch = useAppDispatch();
     const [isScanning, setIsScanning] = useState(false);
+    const [hasPermission, setHasPermission] = useState<boolean | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
+    const isOnline = navigator.onLine;
 
     useEffect(() => {
-        if (navigator.onLine) {
+        if (isOnline) {
             navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-                .then(s => { if (videoRef.current) videoRef.current.srcObject = s; });
+                .then(s => { 
+                    setHasPermission(true);
+                    if (videoRef.current) videoRef.current.srcObject = s; 
+                })
+                .catch(err => {
+                    console.error(err);
+                    setHasPermission(false);
+                });
         }
-    }, []);
+    }, [isOnline]);
 
     const handleCapture = async () => {
         setIsScanning(true);
-        // KI-Logik hier...
+        // Simulation der KI-Logik
         setTimeout(() => {
             dispatch({ type: 'CLOSE_MODAL' });
             setIsScanning(false);
         }, 2000);
     };
+
+    if (!isOnline) {
+        return (
+             <div className="flex flex-col items-center justify-center py-20 text-center space-y-6 animate-in">
+                <div className="w-20 h-20 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-500"><WifiOff size={40} /></div>
+                <div>
+                    <h4 className="text-lg font-black uppercase tracking-widest">Offline</h4>
+                    <p className="text-xs text-muted-foreground/60 mt-2 max-w-[200px]">Der KI-Scan benötigt eine aktive Internetverbindung.</p>
+                </div>
+                <Button onClick={() => dispatch({ type: 'CLOSE_MODAL' })}>Abbrechen</Button>
+            </div>
+        )
+    }
+
+    if (hasPermission === false) {
+        return (
+             <div className="flex flex-col items-center justify-center py-20 text-center space-y-6 animate-in">
+                <div className="w-20 h-20 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-500"><CameraOff size={40} /></div>
+                <div>
+                    <h4 className="text-lg font-black uppercase tracking-widest">Kein Zugriff</h4>
+                    <p className="text-xs text-muted-foreground/60 mt-2 max-w-[200px]">Bitte erlaube den Zugriff auf die Kamera in deinen Browsereinstellungen.</p>
+                </div>
+                <Button onClick={() => dispatch({ type: 'CLOSE_MODAL' })}>Abbrechen</Button>
+            </div>
+        )
+    }
 
     return (
         <div className="space-y-8 animate-in">
@@ -218,6 +253,22 @@ const MODAL_COMPONENTS: any = {
 const ModalManager: React.FC = () => {
     const { activeModal } = useAppState();
     const dispatch = useAppDispatch();
+    const [paramsLoaded, setParamsLoaded] = useState(false);
+
+    // Deep Link Handler (PWA Shortcuts)
+    useEffect(() => {
+        if (paramsLoaded) return;
+        const params = new URLSearchParams(window.location.search);
+        const action = params.get('action');
+        if (action === 'add_transaction') {
+            dispatch({ type: 'OPEN_MODAL', payload: { type: 'ADD_TRANSACTION' } });
+            window.history.replaceState({}, '', '/');
+        } else if (action === 'smart_scan') {
+            dispatch({ type: 'OPEN_MODAL', payload: { type: 'SMART_SCAN' } });
+            window.history.replaceState({}, '', '/');
+        }
+        setParamsLoaded(true);
+    }, [dispatch, paramsLoaded]);
 
     if (!activeModal) return null;
     const config = MODAL_COMPONENTS[activeModal.type] || { component: () => null, title: 'Klaro', size: 'md' };

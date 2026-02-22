@@ -21,5 +21,19 @@
       "sizes": "512x512",
       "type": "image/png"
     }
+  ],
+  "shortcuts": [
+    {
+      "name": "Neuer Beleg",
+      "short_name": "Neu",
+      "url": "/?action=add_transaction",
+      "icons": [{ "src": "https://img.icons8.com/fluency/192/bot.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Smart Scan",
+      "short_name": "Scan",
+      "url": "/?action=smart_scan",
+      "icons": [{ "src": "https://img.icons8.com/fluency/192/bot.png", "sizes": "192x192" }]
+    }
   ]
 }

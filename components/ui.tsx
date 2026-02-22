@@ -61,7 +61,7 @@ export const FormGroup: React.FC<{children: React.ReactNode, label: string, html
     </div>
 );
 
-export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>((props, ref) => (
+export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement> & { enterKeyHint?: 'enter' | 'done' | 'go' | 'next' | 'previous' | 'search' | 'send' }>((props, ref) => (
     <input 
         {...props} 
         ref={ref} 
@@ -95,4 +95,42 @@ export const Button: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {v
     };
 
     return <button {...props} onClick={handleClick} className={`${baseClasses} ${variantClasses[variant]} ${props.className}`}>{children}</button>;
+};
+
+export const CircularProgress: React.FC<{ percentage: number; size?: number; strokeWidth?: number }> = ({ percentage, size = 60, strokeWidth = 5 }) => {
+    const radius = (size - strokeWidth) / 2;
+    const circumference = 2 * Math.PI * radius;
+    const offset = circumference - (percentage / 100) * circumference;
+
+    return (
+        <div className="relative" style={{ width: size, height: size }}>
+            <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90">
+                <circle
+                    className="stroke-secondary/20"
+                    fill="transparent"
+                    strokeWidth={strokeWidth}
+                    r={radius}
+                    cx={size / 2}
+                    cy={size / 2}
+                />
+                <circle
+                    className="stroke-primary"
+                    fill="transparent"
+                    strokeWidth={strokeWidth}
+                    strokeDasharray={circumference}
+                    strokeDashoffset={offset}
+                    strokeLinecap="round"
+                    r={radius}
+                    cx={size / 2}
+                    cy={size / 2}
+                    style={{ transition: 'stroke-dashoffset 0.8s ease-out' }}
+                />
+            </svg>
+             <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-[10px] font-black text-foreground">
+                    {`${Math.round(percentage)}%`}
+                </span>
+            </div>
+        </div>
+    );
 };
