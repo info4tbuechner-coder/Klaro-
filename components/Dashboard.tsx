@@ -90,14 +90,6 @@ const Dashboard: React.FC = () => {
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
                 <div className="xl:col-span-2 space-y-8">
                     <section className="glass-card rounded-[3rem] p-8 lg:p-10 border border-white/5 relative overflow-hidden">
-                        <div className="flex items-center justify-between mb-8">
-                            <div className="flex items-center gap-4">
-                                <div className="p-3 bg-primary/10 rounded-2xl text-primary border border-primary/20">
-                                    <BarChart3 size={24} />
-                                </div>
-                                <h2 className="text-xs font-black uppercase tracking-[0.4em] text-foreground/50">Vermögensentwicklung</h2>
-                            </div>
-                        </div>
                         <NetWorthChart />
                     </section>
 

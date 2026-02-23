@@ -61,6 +61,7 @@ export const NetWorthChart = memo(() => {
 
     return (
         <div id="chart-networth-container">
+             <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/30 mb-6">Vermögensentwicklung</h4>
              <div style={{ width: '100%', height: 300 }}>
                 <ResponsiveContainer>
                     <AreaChart data={netWorthData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -159,6 +160,7 @@ export const ProjectTracker = memo(() => {
 
     return (
         <div className="space-y-6" id="chart-project-container">
+            <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/30 mb-6">Projektberichte</h4>
             {projectReportData.length > 0 ? projectReportData.map(p => (
                 <div key={p.name}>
                     <div className="flex justify-between items-baseline mb-2">
@@ -190,6 +192,7 @@ export const GoalTracker = memo(() => {
     const { goals, userProfile } = useAppState();
     return (
         <div className="space-y-4">
+            <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/30 mb-6">Sparziele</h4>
             {goals.length > 0 ? goals.map(goal => {
                 const { name, currentAmount, targetAmount } = goal;
                 const percentage = Math.max(0, Math.min((currentAmount / targetAmount) * 100, 100));
@@ -227,6 +230,7 @@ export const LiabilityTracker = memo(() => {
     
     return (
          <div className="space-y-6">
+            <h4 className="text-[10px] font-black uppercase tracking-[0.4em] text-muted-foreground/30 mb-6">Verbindlichkeiten</h4>
             {liabilities.map(l => {
                  const progress = l.initialAmount > 0 ? (l.paidAmount / l.initialAmount) * 100 : 100;
                  return (

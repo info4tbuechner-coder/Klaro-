@@ -69,7 +69,7 @@ const SyncModal: React.FC = memo(() => {
 });
 
 const TransactionModal: React.FC<{ initialData?: Partial<Transaction>, transaction?: Transaction }> = memo(({ initialData, transaction }) => {
-    const { categories } = useAppState();
+    const { categories, liabilities, goals } = useAppState();
     const dispatch = useAppDispatch();
     const isEdit = !!transaction;
     const [formData, setFormData] = useState({
@@ -78,27 +78,75 @@ const TransactionModal: React.FC<{ initialData?: Partial<Transaction>, transacti
         date: transaction?.date || initialData?.date || format(new Date(), 'yyyy-MM-dd'),
         type: transaction?.type || initialData?.type || TransactionType.EXPENSE,
         categoryId: transaction?.categoryId || initialData?.categoryId || '',
+        tags: transaction?.tags?.join(', ') || initialData?.tags?.join(', ') || '',
+        liabilityId: transaction?.liabilityId || initialData?.liabilityId || '',
+        goalId: transaction?.goalId || initialData?.goalId || '',
     });
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         const amount = parseFloat(formData.amount);
         if (isNaN(amount) || !formData.description) return;
+        
+        const tags = formData.tags.split(',').map(t => t.trim()).filter(t => t);
+        const payload = {
+            ...formData,
+            amount,
+            tags,
+            liabilityId: formData.liabilityId || undefined,
+            goalId: formData.goalId || undefined,
+            categoryId: formData.categoryId || undefined
+        };
+
         if (isEdit && transaction) {
-            dispatch({ type: 'UPDATE_TRANSACTION', payload: { ...transaction, ...formData, amount } });
+            dispatch({ type: 'UPDATE_TRANSACTION', payload: { ...transaction, ...payload } });
         } else {
-            dispatch({ type: 'ADD_TRANSACTION', payload: { ...formData, amount } as any });
+            dispatch({ type: 'ADD_TRANSACTION', payload: payload as any });
         }
     };
 
     return (
         <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-2 gap-4">
-                <FormGroup label="Typ"><Select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value as any})}><option value="expense">Ausgabe</option><option value="income">Einnahme</option></Select></FormGroup>
+                <FormGroup label="Typ"><Select value={formData.type} onChange={e => setFormData({...formData, type: e.target.value as any})}><option value="expense">Ausgabe</option><option value="income">Einnahme</option><option value="saving">Sparen</option></Select></FormGroup>
                 <FormGroup label="Datum"><Input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} /></FormGroup>
             </div>
             <FormGroup label="Beschreibung"><Input value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="Wofür?" enterKeyHint="next" /></FormGroup>
-            <FormGroup label="Betrag"><Input type="number" step="0.01" inputMode="decimal" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} placeholder="0,00" enterKeyHint="done" /></FormGroup>
+            <FormGroup label="Betrag"><Input type="number" step="0.01" inputMode="decimal" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} placeholder="0,00" enterKeyHint="next" /></FormGroup>
+            
+            <FormGroup label="Kategorie">
+                <Select value={formData.categoryId} onChange={e => setFormData({...formData, categoryId: e.target.value})}>
+                    <option value="">Keine Kategorie</option>
+                    {categories.filter(c => c.type === (formData.type === 'income' ? 'income' : 'expense')).map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                </Select>
+            </FormGroup>
+
+            {formData.type === 'expense' && liabilities.length > 0 && (
+                <FormGroup label="Verbindlichkeit (Optional)">
+                    <Select value={formData.liabilityId} onChange={e => setFormData({...formData, liabilityId: e.target.value})}>
+                        <option value="">Keine Auswahl</option>
+                        {liabilities.map(l => (
+                            <option key={l.id} value={l.id}>{l.name}</option>
+                        ))}
+                    </Select>
+                </FormGroup>
+            )}
+
+            {formData.type === 'saving' && goals.length > 0 && (
+                <FormGroup label="Sparziel (Optional)">
+                    <Select value={formData.goalId} onChange={e => setFormData({...formData, goalId: e.target.value})}>
+                        <option value="">Keine Auswahl</option>
+                        {goals.map(g => (
+                            <option key={g.id} value={g.id}>{g.name}</option>
+                        ))}
+                    </Select>
+                </FormGroup>
+            )}
+
+            <FormGroup label="Tags (Komma getrennt)"><Input value={formData.tags} onChange={e => setFormData({...formData, tags: e.target.value})} placeholder="z.B. Urlaub, Arbeit" enterKeyHint="done" /></FormGroup>
+
             <div className="flex gap-4 pt-4">
                 <Button type="button" onClick={() => dispatch({ type: 'CLOSE_MODAL' })} className="flex-1">Abbrechen</Button>
                 <Button type="submit" variant="primary" className="flex-1">{isEdit ? 'Speichern' : 'Hinzufügen'}</Button>

@@ -77,10 +77,15 @@ const TransactionItem: React.FC<{
                     </span>
                 </div>
                 <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 lg:gap-3">
+                    <div className="flex items-center gap-2 lg:gap-3 flex-wrap">
                          <span className="px-2 py-0.5 rounded-lg bg-secondary/30 font-black text-[8px] lg:text-[10px] uppercase tracking-widest text-muted-foreground/50 border border-white/5">
                             {category?.name || 'Sonstiges'}
                         </span>
+                        {transaction.tags && transaction.tags.map(tag => (
+                            <span key={tag} className="px-2 py-0.5 rounded-lg bg-primary/10 font-black text-[8px] lg:text-[10px] uppercase tracking-widest text-primary border border-primary/20 flex items-center gap-1">
+                                <Tag size={8} /> {tag}
+                            </span>
+                        ))}
                     </div>
                     <div className="opacity-40 lg:opacity-0 group-hover:opacity-100 transition-all">
                          <ChevronRight size={16} />
