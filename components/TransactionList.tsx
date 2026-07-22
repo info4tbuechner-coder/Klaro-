@@ -2,7 +2,7 @@
 import React, { useMemo, useState, useCallback, memo } from 'react';
 import { useAppState, useAppDispatch, useFilteredTransactions } from '../context/AppContext';
 import { Transaction, TransactionType, Category, DateRangePreset } from '../types';
-import { Trash2, Search, TrendingDown, PiggyBank, DollarSign, X, Inbox, ChevronRight, SlidersHorizontal, Tag, Clock, ArrowUpRight } from 'lucide-react';
+import { Trash2, Search, TrendingDown, PiggyBank, DollarSign, X, Inbox, ChevronRight, SlidersHorizontal, Tag, Clock, ArrowUpRight, Download } from 'lucide-react';
 import { formatCurrency } from '../utils';
 import { parseISO } from 'date-fns/parseISO';
 import { isToday } from 'date-fns/isToday';
@@ -206,6 +206,7 @@ const TransactionList: React.FC = () => {
                                 setShowFilters(!showFilters);
                             }} 
                             className={`p-4 lg:p-5 rounded-2xl lg:rounded-[2rem] transition-all duration-500 relative flex items-center justify-center ${showFilters || activeFiltersCount > 0 ? 'bg-primary text-primary-foreground shadow-xl' : 'bg-secondary/20 text-muted-foreground/30 hover:text-primary'}`}
+                            title="Filter anzeigen"
                         >
                             <SlidersHorizontal size={22} />
                             {activeFiltersCount > 0 && !showFilters && (
@@ -213,6 +214,16 @@ const TransactionList: React.FC = () => {
                                     {activeFiltersCount}
                                 </span>
                             )}
+                        </button>
+                        <button 
+                            onClick={() => {
+                                if (navigator.vibrate) navigator.vibrate(10);
+                                dispatch({ type: 'OPEN_MODAL', payload: { type: 'EXPORT_IMPORT_DATA' } });
+                            }} 
+                            className="p-4 lg:p-5 rounded-2xl lg:rounded-[2rem] bg-secondary/20 text-muted-foreground/40 hover:text-primary transition-all duration-500 flex items-center justify-center active:scale-95"
+                            title="Monatliche Übersicht Exportieren (PDF/CSV)"
+                        >
+                            <Download size={22} />
                         </button>
                     </div>
                 </div>

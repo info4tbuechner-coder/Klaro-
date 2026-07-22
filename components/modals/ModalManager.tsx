@@ -2,10 +2,14 @@
 import React, { useState, memo, useEffect, useRef } from 'react';
 import { useAppState, useAppDispatch, useNetWorthData } from '../../context/AppContext';
 import { Transaction, TransactionType } from '../../types';
-import { RefreshCw, AlertCircle, ShieldCheck, Camera, CameraOff, LogOut, WifiOff, Download } from 'lucide-react';
+import { RefreshCw, AlertCircle, ShieldCheck, Camera, CameraOff, LogOut, WifiOff, Download, Calendar, FileText, FileSpreadsheet } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { formatCurrency, formatCompactNumber } from '../../utils';
 import { format } from 'date-fns/format';
+import { parseISO } from 'date-fns/parseISO';
+import { isSameMonth } from 'date-fns/isSameMonth';
+import { subMonths } from 'date-fns/subMonths';
+import { de } from 'date-fns/locale/de';
 import { Modal, Button, Select, Input, FormGroup } from '../ui';
 
 // 1. Deklaration der Sub-Komponenten (vor dem Registry-Objekt)
@@ -292,36 +296,87 @@ const ExportDataModal: React.FC = memo(() => {
     const { transactions, categories, userProfile } = useAppState();
     const dispatch = useAppDispatch();
     const [isExporting, setIsExporting] = useState(false);
+    const [period, setPeriod] = useState<'this_month' | 'last_month' | 'custom_month' | 'all'>('this_month');
+    const [selectedMonthStr, setSelectedMonthStr] = useState<string>(() => format(new Date(), 'yyyy-MM'));
+
+    const filteredTransactions = React.useMemo(() => {
+        const now = new Date();
+        if (period === 'this_month') {
+            return transactions.filter(t => isSameMonth(parseISO(t.date), now));
+        } else if (period === 'last_month') {
+            return transactions.filter(t => isSameMonth(parseISO(t.date), subMonths(now, 1)));
+        } else if (period === 'custom_month') {
+            if (!selectedMonthStr) return transactions;
+            const targetDate = parseISO(`${selectedMonthStr}-01`);
+            return transactions.filter(t => isSameMonth(parseISO(t.date), targetDate));
+        }
+        return transactions;
+    }, [transactions, period, selectedMonthStr]);
+
+    const periodLabel = React.useMemo(() => {
+        const now = new Date();
+        if (period === 'this_month') return format(now, 'MMMM yyyy', { locale: de });
+        if (period === 'last_month') return format(subMonths(now, 1), 'MMMM yyyy', { locale: de });
+        if (period === 'custom_month' && selectedMonthStr) return format(parseISO(`${selectedMonthStr}-01`), 'MMMM yyyy', { locale: de });
+        return 'Alle Transaktionen';
+    }, [period, selectedMonthStr]);
+
+    const stats = React.useMemo(() => {
+        let income = 0;
+        let expense = 0;
+        let saving = 0;
+        filteredTransactions.forEach(t => {
+            if (t.type === TransactionType.INCOME) income += t.amount;
+            else if (t.type === TransactionType.EXPENSE) expense += t.amount;
+            else if (t.type === TransactionType.SAVING) saving += t.amount;
+        });
+        return {
+            count: filteredTransactions.length,
+            income,
+            expense,
+            saving,
+            net: income - expense
+        };
+    }, [filteredTransactions]);
 
     const exportCSV = () => {
         setIsExporting(true);
         setTimeout(() => {
-            const headers = ['Datum', 'Beschreibung', 'Betrag', 'Typ', 'Kategorie', 'Tags'];
-            const rows = transactions.map(t => {
+            const headers = ['Datum', 'Beschreibung', 'Betrag (€)', 'Typ', 'Kategorie', 'Tags'];
+            const rows = filteredTransactions.map(t => {
                 const category = categories.find(c => c.id === t.categoryId);
+                const typeText = t.type === TransactionType.INCOME ? 'Einnahme' : t.type === TransactionType.EXPENSE ? 'Ausgabe' : 'Sparen';
                 return [
                     t.date,
                     `"${t.description.replace(/"/g, '""')}"`,
                     t.amount.toString(),
-                    t.type,
-                    category ? `"${category.name.replace(/"/g, '""')}"` : '',
+                    typeText,
+                    category ? `"${category.name.replace(/"/g, '""')}"` : 'Sonstiges',
                     t.tags ? `"${t.tags.join(', ').replace(/"/g, '""')}"` : ''
-                ].join(',');
+                ].join(';');
             });
             
-            const csvContent = [headers.join(','), ...rows].join('\n');
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-            link.setAttribute("href", url);
-            link.setAttribute("download", `klaro_export_${format(new Date(), 'yyyy-MM-dd')}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
+            const summaryRow = `\n\nZusammenfassung: ${periodLabel};Einnahmen: ${stats.income.toFixed(2)};Ausgaben: ${stats.expense.toFixed(2)};Saldo: ${stats.net.toFixed(2)}`;
+            const csvContent = "\uFEFF" + [headers.join(';'), ...rows].join('\n') + summaryRow;
+            
+            try {
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.setAttribute("href", url);
+                link.setAttribute("download", `klaro_monatsübersicht_${periodLabel.toLowerCase().replace(/\s+/g, '_')}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            } catch (e) {
+                console.error("CSV export error", e);
+                alert("Download blockiert. Bitte öffne die App in einem neuen Fenster, um Dateien herunterzuladen.");
+            }
+            
             setIsExporting(false);
             dispatch({ type: 'CLOSE_MODAL' });
-        }, 500);
+        }, 300);
     };
 
     const exportPDF = async () => {
@@ -331,31 +386,75 @@ const ExportDataModal: React.FC = memo(() => {
             const autoTable = (await import('jspdf-autotable')).default;
 
             const doc = new jsPDF();
-            doc.setFontSize(16);
-            doc.text("Transaktionsübersicht", 14, 15);
             
-            const tableData = transactions.map(t => {
+            // Branding Header
+            doc.setFontSize(20);
+            doc.setTextColor(33, 37, 41);
+            doc.text("KLARO | Financial Intelligence", 14, 18);
+
+            doc.setFontSize(12);
+            doc.setTextColor(100, 116, 139);
+            doc.text(`Monatliche Transaktionsübersicht – ${periodLabel}`, 14, 26);
+
+            doc.setFontSize(9);
+            doc.text(`Erstellt am: ${format(new Date(), 'dd.MM.yyyy HH:mm')} Uhr`, 14, 32);
+
+            // KPI Summary Box
+            doc.setDrawColor(226, 232, 240);
+            doc.setFillColor(248, 250, 252);
+            doc.roundedRect(14, 38, 182, 22, 3, 3, 'FD');
+
+            doc.setFontSize(9);
+            doc.setTextColor(71, 85, 105);
+            doc.text("Gesamteinnahmen:", 20, 47);
+            doc.setTextColor(16, 185, 129);
+            doc.setFont('helvetica', 'bold');
+            doc.text(formatCurrency(stats.income, userProfile.currency, userProfile.language), 20, 54);
+
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(71, 85, 105);
+            doc.text("Gesamtausgaben:", 80, 47);
+            doc.setTextColor(239, 68, 68);
+            doc.setFont('helvetica', 'bold');
+            doc.text(formatCurrency(stats.expense, userProfile.currency, userProfile.language), 80, 54);
+
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(71, 85, 105);
+            doc.text("Monatssaldo:", 140, 47);
+            doc.setTextColor(stats.net >= 0 ? 16 : 239, stats.net >= 0 ? 185 : 68, stats.net >= 0 ? 129 : 68);
+            doc.setFont('helvetica', 'bold');
+            doc.text(formatCurrency(stats.net, userProfile.currency, userProfile.language), 140, 54);
+
+            doc.setFont('helvetica', 'normal');
+
+            // Table Data
+            const tableData = filteredTransactions.map(t => {
                 const category = categories.find(c => c.id === t.categoryId);
+                const isInc = t.type === TransactionType.INCOME;
+                const isSav = t.type === TransactionType.SAVING;
                 return [
                     format(new Date(t.date), 'dd.MM.yyyy'),
                     t.description,
-                    formatCurrency(t.amount, userProfile.currency, userProfile.language),
-                    t.type === 'income' ? 'Einnahme' : t.type === 'expense' ? 'Ausgabe' : 'Sparen',
-                    category ? category.name : '-'
+                    `${isInc ? '+' : isSav ? '' : '-'}${formatCurrency(t.amount, userProfile.currency, userProfile.language)}`,
+                    isInc ? 'Einnahme' : isSav ? 'Sparen' : 'Ausgabe',
+                    category ? category.name : 'Sonstiges'
                 ];
             });
 
             autoTable(doc, {
                 head: [['Datum', 'Beschreibung', 'Betrag', 'Typ', 'Kategorie']],
                 body: tableData,
-                startY: 20,
-                styles: { fontSize: 8 },
-                headStyles: { fillColor: [33, 33, 33] }
+                startY: 68,
+                styles: { fontSize: 8, cellPadding: 3 },
+                headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontStyle: 'bold' },
+                alternateRowStyles: { fillColor: [248, 250, 252] },
+                margin: { left: 14, right: 14 }
             });
 
-            doc.save(`klaro_export_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
-        } catch (e) {
-            console.error(e);
+            doc.save(`klaro_monatsuebersicht_${periodLabel.toLowerCase().replace(/\s+/g, '_')}.pdf`);
+        } catch (e: any) {
+            console.error("PDF export error", e);
+            alert("Download blockiert. Bitte öffne die App in einem neuen Fenster, um Dateien herunterzuladen.");
         } finally {
             setIsExporting(false);
             dispatch({ type: 'CLOSE_MODAL' });
@@ -364,19 +463,77 @@ const ExportDataModal: React.FC = memo(() => {
 
     return (
         <div className="space-y-6 animate-in">
-            <div className="text-center p-6 bg-secondary/20 rounded-[3rem] border border-white/5">
-                <div className="w-20 h-20 mx-auto rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-500 mb-4">
-                    <Download size={32} />
+            <div className="text-center p-6 bg-secondary/20 rounded-[2.5rem] border border-white/5">
+                <div className="w-16 h-16 mx-auto rounded-2xl bg-primary/10 flex items-center justify-center text-primary mb-3">
+                    <Download size={28} />
                 </div>
-                <h4 className="text-xl font-black">Daten Exportieren</h4>
-                <p className="text-xs text-muted-foreground/60 mt-2">Lade deine Transaktionen lokal herunter.</p>
+                <h4 className="text-xl font-black tracking-tight">Monatsexport</h4>
+                <p className="text-xs text-muted-foreground/60 mt-1">Lade deine Transaktionsübersicht als PDF oder CSV herunter.</p>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-                <Button onClick={exportCSV} disabled={isExporting || transactions.length === 0} className="w-full">
-                    CSV Datei
+
+            {/* Zeitraum Auswahl */}
+            <div className="space-y-3">
+                <label className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground/60 flex items-center gap-1.5 px-1">
+                    <Calendar size={12} /> Zeitraum wählen
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-1.5 bg-secondary/20 rounded-2xl border border-white/5">
+                    {[
+                        { id: 'this_month', label: 'Diesen Monat' },
+                        { id: 'last_month', label: 'Letzten Monat' },
+                        { id: 'custom_month', label: 'Wählen' },
+                        { id: 'all', label: 'Alle' },
+                    ].map(item => (
+                        <button
+                            key={item.id}
+                            onClick={() => setPeriod(item.id as any)}
+                            className={`py-2 px-3 rounded-xl text-xs font-bold transition-all ${period === item.id ? 'bg-primary text-primary-foreground shadow-lg' : 'text-muted-foreground/60 hover:text-foreground'}`}
+                        >
+                            {item.label}
+                        </button>
+                    ))}
+                </div>
+
+                {period === 'custom_month' && (
+                    <div className="pt-2 animate-in">
+                        <input
+                            type="month"
+                            value={selectedMonthStr}
+                            onChange={(e) => setSelectedMonthStr(e.target.value)}
+                            className="w-full p-3 bg-secondary/30 border border-white/10 rounded-xl text-sm font-medium outline-none focus:border-primary"
+                        />
+                    </div>
+                )}
+            </div>
+
+            {/* Period Statistics Summary */}
+            <div className="p-4 bg-secondary/10 rounded-2xl border border-white/5 space-y-3">
+                <div className="flex justify-between items-center text-xs font-bold text-muted-foreground">
+                    <span>{periodLabel}</span>
+                    <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-black">{stats.count} Belege</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 pt-1 text-center">
+                    <div className="p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/10">
+                        <div className="text-[9px] font-black uppercase tracking-wider text-emerald-500/80">Einnahmen</div>
+                        <div className="text-xs font-mono font-bold text-emerald-500 mt-0.5">{formatCurrency(stats.income, userProfile.currency, userProfile.language)}</div>
+                    </div>
+                    <div className="p-2 bg-rose-500/10 rounded-xl border border-rose-500/10">
+                        <div className="text-[9px] font-black uppercase tracking-wider text-rose-500/80">Ausgaben</div>
+                        <div className="text-xs font-mono font-bold text-rose-500 mt-0.5">{formatCurrency(stats.expense, userProfile.currency, userProfile.language)}</div>
+                    </div>
+                    <div className="p-2 bg-primary/10 rounded-xl border border-primary/10">
+                        <div className="text-[9px] font-black uppercase tracking-wider text-primary">Saldo</div>
+                        <div className={`text-xs font-mono font-bold mt-0.5 ${stats.net >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{formatCurrency(stats.net, userProfile.currency, userProfile.language)}</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Export Buttons */}
+            <div className="grid grid-cols-2 gap-3 pt-2">
+                <Button onClick={exportCSV} disabled={isExporting || stats.count === 0} className="w-full py-4 flex items-center justify-center gap-2">
+                    <FileSpreadsheet size={18} /> CSV Export
                 </Button>
-                <Button onClick={exportPDF} disabled={isExporting || transactions.length === 0} variant="primary" className="w-full">
-                    PDF Dokument
+                <Button onClick={exportPDF} disabled={isExporting || stats.count === 0} variant="primary" className="w-full py-4 flex items-center justify-center gap-2">
+                    <FileText size={18} /> PDF Export
                 </Button>
             </div>
         </div>
