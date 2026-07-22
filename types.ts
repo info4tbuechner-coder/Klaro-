@@ -110,7 +110,7 @@ export interface DashboardStats {
     balanceTrend: number;
 }
 
-export type Theme = 'grandeur' | 'synthwave' | 'blockchain' | 'neon' | 'forest' | 'onyx';
+export type Theme = 'light' | 'dark' | 'system';
 
 export type ViewMode = 'all' | 'private' | 'business';
 

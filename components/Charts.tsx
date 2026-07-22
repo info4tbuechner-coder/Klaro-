@@ -6,7 +6,6 @@ import { formatCurrency, formatCompactNumber } from '../utils';
 import { LiabilityType } from '../types';
 import { BudgetOverview } from './BudgetOverview';
 import { CircularProgress } from './ui'; // We might need to move CircularProgress to ui.tsx or keep it here if not shared
-import { Target, Briefcase, TrendingUp, CreditCard, BarChartHorizontal } from 'lucide-react';
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
 

@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { GoogleGenAI } from "@google/genai";
-import { Sparkles, Brain, Lightbulb, TrendingUp, AlertTriangle } from 'lucide-react';
+import { Sparkles, Brain, Lightbulb } from 'lucide-react';
 import { useAppState } from '../context/AppContext';
 import { formatCurrency } from '../utils';
 

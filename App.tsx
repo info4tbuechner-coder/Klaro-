@@ -10,7 +10,7 @@ import BottomNav from './components/BottomNav';
 import Onboarding from './components/Onboarding';
 import { useAppDispatch } from './context/AppContext';
 import DebugPanel from './components/DebugPanel';
-import { RefreshCw, CheckCircle2, AlertCircle, WifiOff } from 'lucide-react';
+import { RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
 
 const PWAUpdateToast: React.FC = () => {
     const [show, setShow] = useState(false);
@@ -87,7 +87,33 @@ const SyncNotificationToast: React.FC = () => {
 const AppContent: React.FC = () => {
     const { theme, debugMode, onboardingComplete } = useAppState();
     const dispatch = useAppDispatch();
-    const isBlockchainTheme = theme === 'blockchain';
+
+    useEffect(() => {
+        const root = window.document.documentElement;
+
+        const applyTheme = (currentTheme: string) => {
+            if (currentTheme === 'dark') {
+                root.classList.add('dark');
+            } else if (currentTheme === 'light') {
+                root.classList.remove('dark');
+            } else {
+                if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                    root.classList.add('dark');
+                } else {
+                    root.classList.remove('dark');
+                }
+            }
+        };
+
+        applyTheme(theme);
+
+        if (theme === 'system') {
+            const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+            const handleChange = () => applyTheme('system');
+            mediaQuery.addEventListener('change', handleChange);
+            return () => mediaQuery.removeEventListener('change', handleChange);
+        }
+    }, [theme]);
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -102,7 +128,7 @@ const AppContent: React.FC = () => {
     }, [dispatch]);
 
     return (
-        <div className={`theme-${theme} font-sans min-h-screen bg-gradient-to-br from-background-start to-background-end text-foreground transition-colors duration-500 overflow-x-hidden ${isBlockchainTheme ? 'blockchain-bg' : ''}`}>
+        <div className="font-sans min-h-screen bg-gradient-to-br from-background-start to-background-end text-foreground transition-colors duration-500 overflow-x-hidden">
             {!onboardingComplete && <Onboarding />}
             
             <Header />

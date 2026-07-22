@@ -84,7 +84,7 @@ const NewsFeed: React.FC = () => {
             setSources(chunks);
             setLastUpdated(Date.now());
             localStorage.setItem(CACHE_KEY, JSON.stringify({ timestamp: Date.now(), headlines: lines, sources: chunks }));
-        } catch (err) {
+        } catch {
             setError("Fehler beim Laden");
         } finally {
             setIsLoading(false);

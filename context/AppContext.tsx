@@ -1,10 +1,9 @@
 
 import React, { createContext, useContext, useMemo, useReducer } from 'react';
 import { 
-    Transaction, Category, Goal, Project, RecurringTransaction, 
-    Theme, ViewMode, Filters, ModalType, TransactionType, 
-    CategoryType, GoalType, Frequency, DateRangePreset, 
-    DashboardStats, Liability, LiabilityType, Action, AppState 
+    Transaction, Category, Filters, TransactionType, 
+    CategoryType, DateRangePreset, 
+    DashboardStats, LiabilityType, Action, AppState 
 } from '../types';
 import useLocalStorage from '../hooks/useLocalStorage';
 import { format } from 'date-fns/format';
@@ -14,8 +13,6 @@ import { startOfYear } from 'date-fns/startOfYear';
 import { endOfYear } from 'date-fns/endOfYear';
 import { subMonths } from 'date-fns/subMonths';
 import { eachMonthOfInterval } from 'date-fns/eachMonthOfInterval';
-import { isSameMonth } from 'date-fns/isSameMonth';
-import { parseISO } from 'date-fns/parseISO';
 import { de } from 'date-fns/locale/de';
 
 const AppStateContext = createContext<AppState | undefined>(undefined);
@@ -28,9 +25,10 @@ const getDatesFromPreset = (preset: DateRangePreset): { from: string; to: string
     switch (preset) {
         case 'this_month':
             return { from: format(startOfMonth(now), 'yyyy-MM-dd'), to: format(endOfMonth(now), 'yyyy-MM-dd') };
-        case 'last_month':
+        case 'last_month': {
             const lastMonth = subMonths(now, 1);
             return { from: format(startOfMonth(lastMonth), 'yyyy-MM-dd'), to: format(endOfMonth(lastMonth), 'yyyy-MM-dd') };
+        }
         case 'this_year':
             return { from: format(startOfYear(now), 'yyyy-MM-dd'), to: format(endOfYear(now), 'yyyy-MM-dd') };
         case 'all_time':
@@ -66,6 +64,12 @@ const sampleCategories: Category[] = [
     { id: 'c8', name: 'Gesundheit', type: CategoryType.EXPENSE, budget: 50 },
 ];
 
+const getInitialTheme = (): Theme => {
+    const t = localStorage.getItem('klaro_theme');
+    if (t === 'light' || t === 'dark' || t === 'system') return t;
+    return 'system';
+};
+
 const initialState: AppState = {
     userProfile: { name: 'Finanzprofi', email: 'hello@klaro.ai', currency: 'EUR', language: 'de' },
     transactions: [],
@@ -74,7 +78,7 @@ const initialState: AppState = {
     projects: [],
     recurringTransactions: [],
     liabilities: [],
-    theme: 'onyx',
+    theme: getInitialTheme(),
     viewMode: 'all',
     filters: initialFilters,
     isSubscribed: false,
@@ -102,13 +106,14 @@ const appReducer = (state: AppState, action: Action): AppState => {
     switch (action.type) {
         case 'SET_THEME': return { ...state, theme: action.payload };
         case 'SET_VIEW_MODE': return { ...state, viewMode: action.payload };
-        case 'UPDATE_FILTERS': 
+        case 'UPDATE_FILTERS': {
             const newFilters = { ...state.filters, ...action.payload };
             if (action.payload.dateRange?.preset && action.payload.dateRange.preset !== 'custom') {
                 const calculated = getDatesFromPreset(action.payload.dateRange.preset);
                 newFilters.dateRange = { ...newFilters.dateRange, ...calculated };
             }
             return { ...state, filters: newFilters };
+        }
         case 'OPEN_MODAL': return { ...state, activeModal: action.payload };
         case 'CLOSE_MODAL': return { ...state, activeModal: null };
         case 'UPDATE_USER_PROFILE': return { ...state, userProfile: { ...state.userProfile, ...action.payload } };
@@ -142,9 +147,10 @@ const appReducer = (state: AppState, action: Action): AppState => {
                 ...action.payload,
                 selectedTransactions: new Set()
             };
-        case 'SET_SELECTED_TRANSACTIONS': 
+        case 'SET_SELECTED_TRANSACTIONS': {
             const nextSet = typeof action.payload === 'function' ? action.payload(state.selectedTransactions) : action.payload;
             return { ...state, selectedTransactions: nextSet };
+        }
         case 'RESET_STATE': return { ...initialState, theme: state.theme };
         case 'TOGGLE_DEBUG_MODE': return { ...state, debugMode: !state.debugMode };
         case 'SET_SYNC_STATUS': return { ...state, syncStatus: action.payload };
@@ -156,7 +162,13 @@ const appReducer = (state: AppState, action: Action): AppState => {
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [storedState, setStoredState] = useLocalStorage<AppState>(STORAGE_KEY, initialState);
-    const hydratedState = useMemo(() => deepMerge(storedState || {}, initialState), [storedState]);
+    const hydratedState = useMemo(() => {
+        const merged = deepMerge(storedState || {}, initialState);
+        if (merged.theme !== 'light' && merged.theme !== 'dark' && merged.theme !== 'system') {
+            merged.theme = getInitialTheme();
+        }
+        return merged;
+    }, [storedState]);
 
     const [state, dispatch] = useReducer((s: AppState, a: Action) => {
         const next = appReducer(s, a);
@@ -264,26 +276,8 @@ export const useNetWorthData = () => {
     }, [transactions, liabilities]);
 };
 
-export const useComparativeExpenseData = () => {
-    const { transactions, categories } = useAppState();
-    return useMemo(() => {
-        const now = new Date();
-        const prev = subMonths(now, 1);
-        const currentMonthData = transactions.filter(t => isSameMonth(parseISO(t.date), now) && t.type === TransactionType.EXPENSE);
-        const prevMonthData = transactions.filter(t => isSameMonth(parseISO(t.date), prev) && t.type === TransactionType.EXPENSE);
 
-        return (categories || []).filter(c => c.type === CategoryType.EXPENSE).map(cat => {
-            const current = currentMonthData.filter(t => t.categoryId === cat.id).reduce((sum, t) => sum + t.amount, 0);
-            const previous = prevMonthData.filter(t => t.categoryId === cat.id).reduce((sum, t) => sum + t.amount, 0);
-            return {
-                name: cat.name,
-                current,
-                previous,
-                diff: previous > 0 ? ((current - previous) / previous) * 100 : 0
-            };
-        }).filter(item => item.current > 0 || item.previous > 0);
-    }, [transactions, categories]);
-};
+
 
 export const useExpensePieChartData = () => {
     const filtered = useFilteredTransactions();
@@ -323,29 +317,7 @@ export const useBudgetOverviewData = () => {
     }, [categories, transactions, now]);
 };
 
-export const useSankeyData = () => {
-    const { categories, transactions } = useAppState();
-    return useMemo(() => {
-        const nodes = [{ name: 'Einnahmen' }, { name: 'Ausgaben' }];
-        const links: any[] = [];
-        const income = transactions.filter(t => t.type === TransactionType.INCOME).reduce((s, t) => s + t.amount, 0);
-        const expenses = transactions.filter(t => t.type === TransactionType.EXPENSE);
-        
-        if (income > 0) {
-            nodes.push({ name: 'Budget' });
-            links.push({ source: 0, target: 2, value: income });
-            const catMap = new Map<string, number>();
-            expenses.forEach(t => {
-                const cat = (categories || []).find(c => c.id === t.categoryId)?.name || 'Sonstiges';
-                catMap.set(cat, (catMap.get(cat) || 0) + t.amount);
-            });
-            catMap.forEach((val, name) => {
-                nodes.push({ name });
-                links.push({ source: 2, target: nodes.length - 1, value: val });
-            });
-        }
-        return { nodes, links };
-    }, [categories, transactions]);
-};
+
+
 
 export const useProjectReportData = () => [];

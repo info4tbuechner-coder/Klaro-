@@ -1,8 +1,8 @@
 
 import React, { useMemo, useState, useCallback, memo } from 'react';
 import { useAppState, useAppDispatch, useFilteredTransactions } from '../context/AppContext';
-import { Transaction, TransactionType, Category, CategoryType, DateRangePreset } from '../types';
-import { Edit, Trash2, Search, TrendingDown, PiggyBank, DollarSign, X, Inbox, ChevronRight, SlidersHorizontal, Tag, Euro, Clock, ArrowUpRight, WifiOff } from 'lucide-react';
+import { Transaction, TransactionType, Category, DateRangePreset } from '../types';
+import { Trash2, Search, TrendingDown, PiggyBank, DollarSign, X, Inbox, ChevronRight, SlidersHorizontal, Tag, Clock, ArrowUpRight } from 'lucide-react';
 import { formatCurrency } from '../utils';
 import { parseISO } from 'date-fns/parseISO';
 import { isToday } from 'date-fns/isToday';
@@ -37,12 +37,11 @@ const TransactionItem: React.FC<{
     category?: Category; 
     isSelected: boolean; 
     onSelect: (id: string) => void; 
-    onEdit: (t: Transaction) => void; 
     onView: (t: Transaction) => void; 
     delay: number;
     currency: string;
     language: string;
-}> = memo(({ transaction, category, isSelected, onSelect, onEdit, onView, delay, currency, language }) => {
+}> = memo(({ transaction, category, isSelected, onSelect, onView, delay, currency, language }) => {
     const isPositive = transaction.type === TransactionType.INCOME;
     const amountColor = isPositive ? 'text-emerald-500' : transaction.type === TransactionType.SAVING ? 'text-blue-500' : 'text-foreground';
     const sign = isPositive ? '+' : transaction.type === TransactionType.SAVING ? '' : '-';
@@ -280,8 +279,15 @@ const TransactionList: React.FC = () => {
                                     transaction={t} 
                                     category={categories.find(c => c.id === t.categoryId)}
                                     isSelected={selectedTransactions.has(t.id)}
-                                    onSelect={(id) => dispatch({ type: 'SET_SELECTED_TRANSACTIONS', payload: s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; }})}
-                                    onEdit={(transaction) => dispatch({ type: 'OPEN_MODAL', payload: { type: 'EDIT_TRANSACTION', data: { transaction } } })}
+                                    onSelect={(id) => dispatch({ type: 'SET_SELECTED_TRANSACTIONS', payload: s => { 
+                                        const n = new Set(s); 
+                                        if (n.has(id)) {
+                                            n.delete(id);
+                                        } else {
+                                            n.add(id);
+                                        }
+                                        return n; 
+                                    }})}
                                     onView={(transaction) => dispatch({ type: 'OPEN_MODAL', payload: { type: 'VIEW_TRANSACTION', data: { transaction } } })}
                                     delay={(gIdx * 100) + (tIdx * 30)}
                                     currency={userProfile.currency}
@@ -294,6 +300,20 @@ const TransactionList: React.FC = () => {
                     <div className="flex flex-col items-center justify-center py-24 text-muted-foreground/20">
                         <Inbox size={64} strokeWidth={1} />
                         <p className="text-sm font-black uppercase tracking-[0.3em] mt-6">Keine Einträge gefunden</p>
+                    </div>
+                )}
+
+                {filteredTransactions.length > paginated.length && (
+                    <div className="flex justify-center pt-8">
+                        <button 
+                            onClick={() => {
+                                if (navigator.vibrate) navigator.vibrate(10);
+                                setPage(p => p + 1);
+                            }}
+                            className="px-8 py-4 bg-secondary/30 hover:bg-secondary/50 rounded-2xl text-xs font-black uppercase tracking-widest transition-all active:scale-95"
+                        >
+                            Mehr laden
+                        </button>
                     </div>
                 )}
             </div>

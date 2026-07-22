@@ -1,17 +1,8 @@
 
 import React, { useState, memo, useEffect, useMemo } from 'react';
 import { useAppState, useAppDispatch } from '../context/AppContext';
-import { Sun, Moon, BarChart2, Settings, Menu, X, Bot, Palette, FileDown, Repeat, Gem, Bug, ChevronDown, Sparkles, Music, TreePine, Zap, Shield, Database, Wifi, WifiOff, RefreshCw } from 'lucide-react';
-import type { Theme, ViewMode, ModalType } from '../types';
-
-const THEMES: { name: Theme; icon: React.ReactNode; color: string }[] = [
-  { name: 'onyx', icon: <Shield size={20} />, color: 'bg-slate-900' },
-  { name: 'grandeur', icon: <Sun size={20} />, color: 'bg-blue-500' },
-  { name: 'blockchain', icon: <Gem size={20} />, color: 'bg-emerald-500' },
-  { name: 'synthwave', icon: <Music size={20} />, color: 'bg-pink-500' },
-  { name: 'neon', icon: <Zap size={20} />, color: 'bg-indigo-500' },
-  { name: 'forest', icon: <TreePine size={20} />, color: 'bg-green-600' },
-];
+import { Settings, Bot, Database, RefreshCw, Sun, Moon, Monitor } from 'lucide-react';
+import type { ViewMode, Theme } from '../types';
 
 const ViewSwitcher = memo(({ viewMode, setViewMode }: { viewMode: ViewMode, setViewMode: (mode: ViewMode) => void }) => (
     <div className="flex items-center p-1.5 rounded-[2rem] bg-secondary/30 border border-border/10 shadow-inner backdrop-blur-2xl">
@@ -25,8 +16,25 @@ const ViewSwitcher = memo(({ viewMode, setViewMode }: { viewMode: ViewMode, setV
     </div>
 ));
 
+const ThemeSwitcher = memo(({ theme, setTheme }: { theme: Theme, setTheme: (mode: Theme) => void }) => {
+    return (
+        <div className="flex items-center p-1.5 rounded-[2rem] bg-secondary/30 border border-border/10 shadow-inner backdrop-blur-2xl">
+            {['light', 'dark', 'system'].map((mode) => (
+                <button key={mode} onClick={() => {
+                    localStorage.setItem('klaro_theme', mode);
+                    setTheme(mode as Theme);
+                }} 
+                    className={`p-2 rounded-full transition-all duration-500 ${theme === mode ? 'bg-background text-foreground shadow-xl scale-[1.1]' : 'text-muted-foreground/40 hover:text-foreground'}`}
+                    title={`Theme: ${mode}`}>
+                    {mode === 'light' ? <Sun size={16} /> : mode === 'dark' ? <Moon size={16} /> : <Monitor size={16} />}
+                </button>
+            ))}
+        </div>
+    );
+});
+
 const Header: React.FC = () => {
-    const { theme, viewMode, userProfile, syncStatus } = useAppState();
+    const { viewMode, userProfile, syncStatus, theme } = useAppState();
     const dispatch = useAppDispatch();
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [scrolled, setScrolled] = useState(false);
@@ -82,6 +90,7 @@ const Header: React.FC = () => {
                         }} />
                         
                         <div className="hidden lg:flex items-center gap-2">
+                             <ThemeSwitcher theme={theme} setTheme={(t) => dispatch({ type: 'SET_THEME', payload: t })} />
                              <button onClick={() => dispatch({ type: 'OPEN_MODAL', payload: { type: 'SYNC_DATA' } })} className={`p-3.5 hover:bg-secondary rounded-2xl text-muted-foreground/40 hover:text-emerald-500 transition-all active:scale-90 relative ${isSyncing ? 'animate-pulse text-emerald-500' : ''}`} title="Blockchain Sync">
                                 {isSyncing ? <RefreshCw size={22} className="animate-spin" /> : <Database size={22} />}
                                 {syncStatus === 'error' && <div className="absolute top-2 right-2 w-2 h-2 bg-rose-500 rounded-full"></div>}
@@ -94,9 +103,11 @@ const Header: React.FC = () => {
                                     <div className="absolute right-0 mt-6 w-72 glass-card rounded-[2.5rem] p-6 shadow-4xl animate-slide-up border border-white/10 z-50 backdrop-blur-3xl" onMouseLeave={() => setIsDropdownOpen(false)}>
                                         <div className="text-[9px] font-black uppercase tracking-[0.4em] text-muted-foreground/20 mb-4 px-2">Konfiguration</div>
                                         <div className="space-y-1">
-                                            {['Kategorien', 'Sparziele', 'Automatisierung'].map((item, idx) => (
-                                                <button key={item} onClick={() => setIsDropdownOpen(false)} className="w-full text-left p-3.5 rounded-xl hover:bg-primary/5 font-bold transition-all text-sm opacity-60 hover:opacity-100">{item}</button>
-                                            ))}
+                                            <button onClick={() => { setIsDropdownOpen(false); dispatch({ type: 'OPEN_MODAL', payload: { type: 'EXPORT_IMPORT_DATA' }}); }} className="w-full text-left p-3.5 rounded-xl hover:bg-primary/5 font-bold transition-all text-sm opacity-60 hover:opacity-100 flex items-center justify-between">
+                                                Daten Exportieren
+                                            </button>
+                                            <button onClick={() => { setIsDropdownOpen(false); }} className="w-full text-left p-3.5 rounded-xl hover:bg-primary/5 font-bold transition-all text-sm opacity-60 hover:opacity-100">Kategorien verwalten</button>
+                                            <button onClick={() => { setIsDropdownOpen(false); }} className="w-full text-left p-3.5 rounded-xl hover:bg-primary/5 font-bold transition-all text-sm opacity-60 hover:opacity-100">Automatisierung</button>
                                         </div>
                                     </div>
                                 )}

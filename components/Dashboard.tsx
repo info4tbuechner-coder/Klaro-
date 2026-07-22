@@ -1,11 +1,11 @@
 
 import React, { memo, useState, useEffect, useRef } from 'react';
-import { useDashboardStats, useBudgetOverviewData, useAppDispatch, useAppState } from '../context/AppContext';
-import { ArrowUpRight, ArrowDownRight, Minus, TrendingUp, TrendingDown, Wallet, Landmark, PieChart, MoreHorizontal, Activity, Zap, Sparkles, AlertCircle, BarChart3 } from 'lucide-react';
+import { useDashboardStats, useAppDispatch, useAppState } from '../context/AppContext';
+import { ArrowUpRight, ArrowDownRight, Minus, TrendingUp, TrendingDown, Wallet, MoreHorizontal, Activity, Zap } from 'lucide-react';
 import { formatCurrency } from '../utils';
 import NewsFeed from './NewsFeed';
 import AIAdvisor from './AIAdvisor';
-import { NetWorthChart, CashflowAnalysis } from './Charts';
+import { NetWorthChart } from './Charts';
 
 const AnimatedNumber: React.FC<{ value: number; currency: string; language: string }> = ({ value, currency, language }) => {
     const [displayValue, setDisplayValue] = useState(0);

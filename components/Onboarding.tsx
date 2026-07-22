@@ -1,7 +1,7 @@
 
-import React, { useState, memo } from 'react';
+import React, { useState } from 'react';
 import { useAppDispatch } from '../context/AppContext';
-import { Bot, Shield, BrainCircuit, Globe, ArrowRight, Check, Languages, Coins, User } from 'lucide-react';
+import { Bot, Shield, BrainCircuit, ArrowRight, Check, User } from 'lucide-react';
 import { Button, Input, Select, FormGroup } from './ui';
 
 const OnboardingStep: React.FC<{

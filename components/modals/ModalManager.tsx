@@ -1,13 +1,12 @@
 
-import React, { useState, memo, useMemo, useEffect, useRef } from 'react';
+import React, { useState, memo, useEffect, useRef } from 'react';
 import { useAppState, useAppDispatch, useNetWorthData } from '../../context/AppContext';
 import { Transaction, TransactionType } from '../../types';
-import { TrendingUp, Wallet, ArrowRightLeft, PieChart as PieIcon, Plus, Trash2, Edit2, Camera, Calendar, Tag as TagIcon, Download, Upload, LogOut, Smartphone, Heart, WifiOff, AlertCircle, ShieldCheck, Database, Globe, RefreshCw, BrainCircuit, CameraOff } from 'lucide-react';
+import { RefreshCw, AlertCircle, ShieldCheck, Camera, CameraOff, LogOut, WifiOff, Download } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { formatCurrency, formatDate, formatCompactNumber } from '../../utils';
+import { formatCurrency, formatCompactNumber } from '../../utils';
 import { format } from 'date-fns/format';
 import { Modal, Button, Select, Input, FormGroup } from '../ui';
-import { GoogleGenAI, Type } from "@google/genai";
 
 // 1. Deklaration der Sub-Komponenten (vor dem Registry-Objekt)
 
@@ -27,6 +26,7 @@ const SyncModal: React.FC = memo(() => {
             dispatch({ type: 'SET_SYNC_STATUS', payload: 'error' });
             return;
         }
+        setErrorMsg(null);
         dispatch({ type: 'SET_SYNC_STATUS', payload: 'syncing' });
         for (let i = 0; i < steps.length; i++) {
             setStep(i);
@@ -48,6 +48,7 @@ const SyncModal: React.FC = memo(() => {
                 <p className="text-[10px] font-black uppercase opacity-40 mt-2">
                     {lastSyncAt ? `Zuletzt: ${format(new Date(lastSyncAt), 'HH:mm:ss')}` : 'Noch kein Sync'}
                 </p>
+                {errorMsg && <p className="text-rose-500 text-xs mt-2 font-bold">{errorMsg}</p>}
             </div>
             {syncStatus === 'syncing' && (
                 <div className="space-y-3">
@@ -164,6 +165,7 @@ const ViewTransactionModal: React.FC<{ transaction: Transaction }> = memo(({ tra
             <div className="text-center p-8 bg-secondary/20 rounded-[3rem] border border-white/5">
                 <h4 className="text-3xl font-black">{formatCurrency(transaction.amount, userProfile.currency, userProfile.language)}</h4>
                 <p className="text-sm font-bold text-muted-foreground/60 mt-1">{transaction.description}</p>
+                {category && <p className="text-[10px] uppercase tracking-widest font-black text-primary mt-4 py-1 px-3 bg-primary/10 rounded-full inline-block">{category.name}</p>}
             </div>
             <div className="flex gap-4">
                 <Button onClick={() => dispatch({ type: 'DELETE_TRANSACTIONS', payload: [transaction.id] })} variant="destructive" className="flex-1">Löschen</Button>
@@ -286,6 +288,101 @@ const SmartScanModal: React.FC = memo(() => {
     );
 });
 
+const ExportDataModal: React.FC = memo(() => {
+    const { transactions, categories, userProfile } = useAppState();
+    const dispatch = useAppDispatch();
+    const [isExporting, setIsExporting] = useState(false);
+
+    const exportCSV = () => {
+        setIsExporting(true);
+        setTimeout(() => {
+            const headers = ['Datum', 'Beschreibung', 'Betrag', 'Typ', 'Kategorie', 'Tags'];
+            const rows = transactions.map(t => {
+                const category = categories.find(c => c.id === t.categoryId);
+                return [
+                    t.date,
+                    `"${t.description.replace(/"/g, '""')}"`,
+                    t.amount.toString(),
+                    t.type,
+                    category ? `"${category.name.replace(/"/g, '""')}"` : '',
+                    t.tags ? `"${t.tags.join(', ').replace(/"/g, '""')}"` : ''
+                ].join(',');
+            });
+            
+            const csvContent = [headers.join(','), ...rows].join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", `klaro_export_${format(new Date(), 'yyyy-MM-dd')}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            setIsExporting(false);
+            dispatch({ type: 'CLOSE_MODAL' });
+        }, 500);
+    };
+
+    const exportPDF = async () => {
+        setIsExporting(true);
+        try {
+            const jsPDF = (await import('jspdf')).default;
+            const autoTable = (await import('jspdf-autotable')).default;
+
+            const doc = new jsPDF();
+            doc.setFontSize(16);
+            doc.text("Transaktionsübersicht", 14, 15);
+            
+            const tableData = transactions.map(t => {
+                const category = categories.find(c => c.id === t.categoryId);
+                return [
+                    format(new Date(t.date), 'dd.MM.yyyy'),
+                    t.description,
+                    formatCurrency(t.amount, userProfile.currency, userProfile.language),
+                    t.type === 'income' ? 'Einnahme' : t.type === 'expense' ? 'Ausgabe' : 'Sparen',
+                    category ? category.name : '-'
+                ];
+            });
+
+            autoTable(doc, {
+                head: [['Datum', 'Beschreibung', 'Betrag', 'Typ', 'Kategorie']],
+                body: tableData,
+                startY: 20,
+                styles: { fontSize: 8 },
+                headStyles: { fillColor: [33, 33, 33] }
+            });
+
+            doc.save(`klaro_export_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setIsExporting(false);
+            dispatch({ type: 'CLOSE_MODAL' });
+        }
+    };
+
+    return (
+        <div className="space-y-6 animate-in">
+            <div className="text-center p-6 bg-secondary/20 rounded-[3rem] border border-white/5">
+                <div className="w-20 h-20 mx-auto rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-500 mb-4">
+                    <Download size={32} />
+                </div>
+                <h4 className="text-xl font-black">Daten Exportieren</h4>
+                <p className="text-xs text-muted-foreground/60 mt-2">Lade deine Transaktionen lokal herunter.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+                <Button onClick={exportCSV} disabled={isExporting || transactions.length === 0} className="w-full">
+                    CSV Datei
+                </Button>
+                <Button onClick={exportPDF} disabled={isExporting || transactions.length === 0} variant="primary" className="w-full">
+                    PDF Dokument
+                </Button>
+            </div>
+        </div>
+    );
+});
+
 // 2. Registry-Objekt (Jetzt sicher, da alle Komponenten deklariert sind)
 
 const MODAL_COMPONENTS: any = {
@@ -296,6 +393,7 @@ const MODAL_COMPONENTS: any = {
     SMART_SCAN: { component: SmartScanModal, title: 'KI Beleg-Scan', size: 'md' },
     USER_PROFILE: { component: UserProfileModal, title: 'Mein Profil', size: 'md' },
     SYNC_DATA: { component: SyncModal, title: 'Network Sync', size: 'md' },
+    EXPORT_IMPORT_DATA: { component: ExportDataModal, title: 'Export', size: 'md' },
 };
 
 const ModalManager: React.FC = () => {
