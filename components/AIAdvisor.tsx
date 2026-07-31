@@ -1,6 +1,5 @@
 
 import React, { useState } from 'react';
-import { GoogleGenAI } from "@google/genai";
 import { Sparkles, Brain, Lightbulb } from 'lucide-react';
 import { useAppState } from '../context/AppContext';
 import { formatCurrency } from '../utils';
@@ -16,11 +15,6 @@ const AIAdvisor: React.FC = () => {
         
         setLoading(true);
         try {
-            const apiKey = process.env.API_KEY;
-            if (!apiKey) return;
-
-            const ai = new GoogleGenAI({ apiKey });
-            
             // Prepare a summary for the AI
             const totalSpent = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
             const topCategories = categories.map(c => {
@@ -45,15 +39,22 @@ const AIAdvisor: React.FC = () => {
                 Sei wie ein cooler Finanz-Coach.
             `;
 
-            const response = await ai.models.generateContent({
-                model: "gemini-3-flash-preview",
-                contents: [{ parts: [{ text: prompt }] }],
+            const response = await fetch('/api/insight', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt })
             });
-
-            const text = response.text || "Behalte deine Ausgaben im Blick, du machst das super!";
+            
+            if (!response.ok) {
+                throw new Error(await response.text());
+            }
+            
+            const data = await response.json();
+            const text = data.insight || "Behalte deine Ausgaben im Blick, du machst das super!";
             setInsight(text);
-        } catch (e) {
+        } catch (e: any) {
             console.error("AI Error", e);
+            setInsight(`Ein Fehler ist aufgetreten: ${e.message || 'Bitte API Key prüfen.'}`);
         } finally {
             setLoading(false);
         }

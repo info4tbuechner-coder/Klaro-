@@ -1,6 +1,5 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { GoogleGenAI } from "@google/genai";
 import { Newspaper, Link as LinkIcon, Clock, ChevronRight, RefreshCw, WifiOff } from 'lucide-react';
 
 interface GroundingChunk {
@@ -56,27 +55,13 @@ const NewsFeed: React.FC = () => {
             return;
         }
 
-        const apiKey = process.env.API_KEY;
-        if (!apiKey) {
-            setError("Key fehlt");
-            setIsLoading(false);
-            return;
-        }
-
         try {
-            const ai = new GoogleGenAI({ apiKey });
-            const response = await ai.models.generateContent({
-               model: "gemini-3-flash-preview",
-               contents: "Nenne mir die 3 wichtigsten Schlagzeilen zu Finanzen und Börse in Deutschland von heute. Sei präzise und kurz.",
-               config: {
-                 systemInstruction: "Antworte nur mit Schlagzeilen, eine pro Zeile. Keine Symbole oder Aufzählungszeichen.",
-                 tools: [{googleSearch: {}}],
-               },
-            });
-
-            const text = response.text || "";
-            const lines = text.split('\n').filter(l => l.trim().length > 5).slice(0, 3);
-            const chunks = (response.candidates?.[0]?.groundingMetadata?.groundingChunks || []) as GroundingChunk[];
+            const response = await fetch('/api/news');
+            if (!response.ok) throw new Error(await response.text());
+            
+            const data = await response.json();
+            const lines = data.headlines || [];
+            const chunks = data.sources || [];
 
             if (lines.length === 0) throw new Error("Keine News gefunden");
 
