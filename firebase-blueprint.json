@@ -1,0 +1,40 @@
+{
+  "collections": [
+    {
+      "path": "users/{userId}",
+      "description": "Stores user profiles for Klaro Financial Intelligence",
+      "fields": {
+        "userId": { "type": "string", "required": true },
+        "email": { "type": "string", "required": true },
+        "displayName": { "type": "string", "required": false },
+        "createdAt": { "type": "number", "required": true },
+        "updatedAt": { "type": "number", "required": true }
+      },
+      "security": {
+        "read": "Owner only (userId == request.auth.uid)",
+        "write": "Owner only (userId == request.auth.uid)"
+      }
+    },
+    {
+      "path": "users/{userId}/transactions/{transactionId}",
+      "description": "Stores personal financial transactions and receipts",
+      "fields": {
+        "id": { "type": "string", "required": true },
+        "userId": { "type": "string", "required": true },
+        "type": { "type": "string", "required": true },
+        "amount": { "type": "number", "required": true },
+        "category": { "type": "string", "required": true },
+        "date": { "type": "string", "required": true },
+        "description": { "type": "string", "required": true },
+        "merchant": { "type": "string", "required": false },
+        "receiptUrl": { "type": "string", "required": false },
+        "createdAt": { "type": "number", "required": true },
+        "updatedAt": { "type": "number", "required": true }
+      },
+      "security": {
+        "read": "Owner only (userId == request.auth.uid)",
+        "write": "Owner only (userId == request.auth.uid)"
+      }
+    }
+  ]
+}

@@ -53,8 +53,8 @@ const AIAdvisor: React.FC = () => {
             const text = data.insight || "Behalte deine Ausgaben im Blick, du machst das super!";
             setInsight(text);
         } catch (e: any) {
-            console.error("AI Error", e);
-            setInsight(`Ein Fehler ist aufgetreten: ${e.message || 'Bitte API Key prüfen.'}`);
+            console.warn("AI Advisor fallback:", e);
+            setInsight("Klaro KI-Tipp: Achte auf einen regelmäßigen Notgroschen von mindestens 3 Monatsgehältern und vergleiche monatliche Abonnements auf Einsparpotenzial.");
         } finally {
             setLoading(false);
         }

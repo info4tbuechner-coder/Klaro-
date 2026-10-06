@@ -1,11 +1,13 @@
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import react from "eslint-plugin-react";
+import firebaseRulesPlugin from "@firebase/eslint-plugin-security-rules";
 
 export default tseslint.config(
   { ignores: ["dist/", "node_modules/", "service-worker.js"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  firebaseRulesPlugin.configs["flat/recommended"],
   {
     files: ["**/*.{ts,tsx}"],
     plugins: {

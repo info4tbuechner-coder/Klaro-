@@ -114,6 +114,18 @@ const Header: React.FC = () => {
                              </div>
                         </div>
 
+                        <button
+                            onClick={() => {
+                                if (navigator.vibrate) navigator.vibrate(5);
+                                dispatch({ type: 'OPEN_MODAL', payload: { type: 'AUTH_MODAL' } });
+                            }}
+                            className="px-3.5 py-2.5 rounded-xl sm:rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 font-bold text-xs border border-emerald-500/30 flex items-center gap-1.5 transition-all shadow-md active:scale-95"
+                            title="Cloud & Datenbank"
+                        >
+                            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                            <span className="hidden sm:inline">Cloud Login</span>
+                        </button>
+
                         <button onClick={() => {
                             if (navigator.vibrate) navigator.vibrate(10);
                             dispatch({ type: 'OPEN_MODAL', payload: { type: 'USER_PROFILE' } });

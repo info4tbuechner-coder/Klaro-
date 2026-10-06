@@ -2,7 +2,7 @@
 import React, { useMemo, useState, useCallback, memo } from 'react';
 import { useAppState, useAppDispatch, useFilteredTransactions } from '../context/AppContext';
 import { Transaction, TransactionType, Category, DateRangePreset } from '../types';
-import { Trash2, Search, TrendingDown, PiggyBank, DollarSign, X, Inbox, ChevronRight, SlidersHorizontal, Tag, Clock, ArrowUpRight, Download } from 'lucide-react';
+import { Trash2, Search, TrendingDown, PiggyBank, DollarSign, X, Inbox, ChevronRight, SlidersHorizontal, Tag, Clock, ArrowUpRight, Download, WifiOff } from 'lucide-react';
 import { formatCurrency } from '../utils';
 import { parseISO } from 'date-fns/parseISO';
 import { isToday } from 'date-fns/isToday';

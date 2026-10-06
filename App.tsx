@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { AppProvider, useAppState } from './context/AppContext';
+import { AuthProvider } from './context/AuthContext';
 import Header from './components/Header';
 import Dashboard from './components/Dashboard';
 import TransactionList from './components/TransactionList';
@@ -155,9 +156,11 @@ const AppContent: React.FC = () => {
 
 const App: React.FC = () => {
     return (
-        <AppProvider>
-            <AppContent />
-        </AppProvider>
+        <AuthProvider>
+            <AppProvider>
+                <AppContent />
+            </AppProvider>
+        </AuthProvider>
     );
 };
 

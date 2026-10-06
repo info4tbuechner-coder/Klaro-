@@ -11,6 +11,7 @@ import { isSameMonth } from 'date-fns/isSameMonth';
 import { subMonths } from 'date-fns/subMonths';
 import { de } from 'date-fns/locale/de';
 import { Modal, Button, Select, Input, FormGroup } from '../ui';
+import AuthModal from './AuthModal';
 
 // 1. Deklaration der Sub-Komponenten (vor dem Registry-Objekt)
 
@@ -218,6 +219,9 @@ const UserProfileModal: React.FC = memo(() => {
                 <p className="text-[10px] font-black uppercase opacity-40">{userProfile.email}</p>
             </div>
             <div className="grid grid-cols-1 gap-3">
+                <Button onClick={() => dispatch({ type: 'OPEN_MODAL', payload: { type: 'AUTH_MODAL' } })} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
+                    <ShieldCheck size={18} /> Cloud-Konto (Login / Registrierung)
+                </Button>
                 <Button onClick={() => dispatch({ type: 'RESET_STATE' })} variant="destructive"><LogOut size={18} /> Alle Daten löschen</Button>
                 <Button onClick={() => dispatch({ type: 'CLOSE_MODAL' })}>Schließen</Button>
             </div>
@@ -549,6 +553,7 @@ const MODAL_COMPONENTS: any = {
     ANALYSIS: { component: IntelligenceCenter, title: 'Intelligence Center', size: 'xl' },
     SMART_SCAN: { component: SmartScanModal, title: 'KI Beleg-Scan', size: 'md' },
     USER_PROFILE: { component: UserProfileModal, title: 'Mein Profil', size: 'md' },
+    AUTH_MODAL: { component: AuthModal, title: 'Klaro Cloud & Datenbank', size: 'md' },
     SYNC_DATA: { component: SyncModal, title: 'Network Sync', size: 'md' },
     EXPORT_IMPORT_DATA: { component: ExportDataModal, title: 'Export', size: 'md' },
 };
